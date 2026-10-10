@@ -93,7 +93,9 @@ The firewall settings are in `inventory/lab/group_vars/`:
 
 `172.31.39.202/20` is a host address with a prefix; its network is `172.31.32.0/20`, covering `172.31.32.0` through `172.31.47.255`. CIDR `/20` describes the network size, not a port. Confirm all intended nodes are in this range.
 
-For SSH through a bastion, you may replace `ssh_sources` with its private IP `/32`. Configure the jump host in your local `~/.ssh/config`, for example:
+UFW rules match source IPs/CIDRs and do not dynamically resolve DNS names. For a bastion whose private IP may change, allow its subnet CIDR in UFW and restrict the AWS security group to the bastion's security group. For a single fixed bastion address, use its private IP with `/32`.
+
+For SSH through a bastion, configure the jump host in your local `~/.ssh/config`, for example:
 
 ```sshconfig
 Host gitaly-lab-bastion
