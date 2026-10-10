@@ -1,12 +1,5 @@
----
-# Vault-encrypt this file before entering credentials:
-# ansible-vault encrypt inventory/lab/group_vars/bastion.yml
-
-praefect_db_host: "database-1.c5cqyc2iyfb3.ap-south-1.rds.amazonaws.com"
+praefect_db_host: database-1.c5cqyc2iyfb3.ap-south-1.rds.amazonaws.com
 praefect_db_port: 5432
 praefect_db_name: praefect_production
 praefect_db_user: praefect
 praefect_db_master_user: postgres
-praefect_db_master_password: "VishalTyagi0210"
-praefect_db_password: "Negd@123"
-tls_ca_privatekey_passphrase: "fU/5onS7YzIDZGmfr8ck4URPIvACqXbeAAgfWz3rSt0="

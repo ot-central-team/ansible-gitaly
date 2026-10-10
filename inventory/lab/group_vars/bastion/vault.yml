@@ -1,0 +1,4 @@
+# Encrypt this file with ansible-vault before committing it.
+praefect_db_master_password: VishalTyagi0210
+praefect_db_password: Negd@123
+tls_ca_privatekey_passphrase: fU/5onS7YzIDZGmfr8ck4URPIvACqXbeAAgfWz3rSt0=

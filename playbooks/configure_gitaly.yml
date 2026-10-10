@@ -1,0 +1,9 @@
+---
+- name: Configure Gitaly nodes separately from their data disks
+  hosts: gitaly
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - gitaly_config

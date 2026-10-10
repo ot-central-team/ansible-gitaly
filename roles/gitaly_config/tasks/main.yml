@@ -1,0 +1,66 @@
+---
+- name: Validate required Gitaly settings and shared tokens
+  ansible.builtin.assert:
+    that:
+      - gitaly_storage_name is defined
+      - gitaly_storage_name | length > 0
+      - praefect_internal_token | length >= 32
+    fail_msg: >-
+      Set this host's storage name and a vaulted Praefect internal token of at
+      least 32 characters before configuring Gitaly.
+  no_log: true
+
+- name: Require callback settings when integrating with the GitLab application
+  ansible.builtin.assert:
+    that:
+      - gitaly_internal_api_url is match('^https?://[^ ]+$')
+      - gitaly_gitlab_secret_token | length >= 32
+      - praefect_internal_token != gitaly_gitlab_secret_token
+    fail_msg: >-
+      Set a reachable GitLab internal API URL and a distinct vaulted GitLab
+      Shell secret token before enabling Gitaly callbacks.
+  when: gitaly_configure_gitlab_callbacks | bool
+  no_log: true
+
+- name: Confirm the repository data path is a mounted filesystem
+  ansible.builtin.command:
+    argv:
+      - mountpoint
+      - -q
+      - "{{ gitaly_repository_mountpoint }}"
+  changed_when: false
+
+- name: Confirm this Gitaly VM has its issued TLS key and certificate
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ gitaly_tls_certificate_path }}"
+    - "{{ gitaly_tls_privatekey_path }}"
+  register: gitaly_tls_files
+
+- name: Require the Gitaly TLS key and certificate before configuration
+  ansible.builtin.assert:
+    that:
+      - gitaly_tls_files.results | map(attribute='stat.exists') | min
+    fail_msg: Run the TLS certificate playbook for this Gitaly host first.
+
+- name: Install the Gitaly GitLab configuration
+  ansible.builtin.template:
+    src: gitlab.rb.j2
+    dest: "{{ gitaly_config_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  register: gitaly_gitlab_rb
+  no_log: true
+
+- name: Apply Gitaly configuration without running Rails migrations
+  ansible.builtin.command:
+    argv:
+      - gitlab-ctl
+      - reconfigure
+  when:
+    - gitaly_reconfigure_on_change | bool
+    - gitaly_gitlab_rb is changed
+  no_log: true

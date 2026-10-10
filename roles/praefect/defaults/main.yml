@@ -1,0 +1,19 @@
+---
+praefect_config_path: /etc/gitlab/gitlab.rb
+praefect_tls_listen_address: '0.0.0.0:3305'
+praefect_tls_certificate_path: /etc/gitlab/ssl/server.crt
+praefect_tls_privatekey_path: /etc/gitlab/ssl/server.key
+praefect_rds_ca_bundle_url: https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+praefect_rds_ca_bundle_path: /etc/gitlab/ssl/rds-global-bundle.pem
+praefect_refresh_rds_ca_bundle: false
+praefect_database_sslmode: verify-full
+praefect_database_port: 5432
+praefect_database_name: praefect_production
+praefect_database_user: praefect
+praefect_virtual_storage_name: default
+praefect_default_replication_factor: 3
+praefect_reconfigure_on_change: true
+
+# Define these in vaulted inventory variables. They must be long random values.
+praefect_external_token: ''
+praefect_internal_token: ''
