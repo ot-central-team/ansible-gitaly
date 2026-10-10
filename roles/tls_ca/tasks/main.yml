@@ -28,7 +28,9 @@
   ansible.builtin.file:
     path: "{{ tls_local_workdir }}"
     state: directory
+    owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
     mode: '0700'
+    recurse: true
   delegate_to: localhost
   become: false
 
