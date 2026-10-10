@@ -2,10 +2,4 @@
 common_service_ports:
   - 3305
 
-# This lab currently has two Gitaly nodes. Raise this to 3 after adding the
-# third Gitaly host. Production HA also requires at least three Praefect hosts.
 praefect_default_replication_factor: 2
-
-# Define praefect_external_token as a vaulted variable. Define the shared
-# praefect_internal_token in group_vars/all.yml as a vaulted variable so both
-# Praefect and Gitaly receive the exact same value. Keep them distinct.

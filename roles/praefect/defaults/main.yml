@@ -11,6 +11,8 @@ praefect_database_port: 5432
 praefect_database_name: praefect_production
 praefect_database_user: praefect
 praefect_virtual_storage_name: default
+# Copies of each repository across Gitaly nodes; this is unrelated to the
+# number of Praefect VMs. Keep 3 as the production default when using 3 Gitaly nodes.
 praefect_default_replication_factor: 3
 praefect_reconfigure_on_change: true
 
