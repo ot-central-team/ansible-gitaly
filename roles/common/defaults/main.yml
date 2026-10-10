@@ -1,0 +1,5 @@
+---
+ssh_sources: []
+common_ssh_port: 22
+cluster_cidr: ""
+common_service_ports: []

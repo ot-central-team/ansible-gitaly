@@ -1,0 +1,19 @@
+# MERGE with the existing GitLab chart values; not a standalone installation.
+# Only repoint 'default' directly for an empty/disposable GitLab instance.
+global:
+  gitaly:
+    enabled: false
+    external:
+      - name: default
+        hostname: praefect-lab.tyagi.fun
+        port: 443
+        tlsEnabled: true
+    authToken:
+      secret: gitaly-lab-praefect-token
+      key: token
+  praefect:
+    enabled: false
+  certificates:
+    # Preserve other customCAs entries when merging: Helm replaces lists.
+    customCAs:
+      - secret: gitaly-lab-ca

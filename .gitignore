@@ -1,0 +1,13 @@
+# Secrets and generated TLS material
+.vault_pass
+vault-password*
+*.key
+*.pem
+*.p12
+*.pfx
+ca/
+certs/
+
+# Ansible/runtime artifacts
+*.retry
+__pycache__/

@@ -1,0 +1,6 @@
+private/
+*.key
+*.pem
+*.srl
+*.csr
+*-filled.rb
