@@ -20,15 +20,18 @@ inventory/
       gitaly.yml          # Gitaly-specific settings (to add)
       praefect.yml        # Praefect/RDS settings (to add)
       haproxy.yml         # proxy backend settings (to add)
+      bastion.yml         # bastion-only RDS administration settings (Vault)
 playbooks/
   prepare.yml             # common OS and firewall preparation
   install_gitlab_package.yml # exact-version GitLab package on Gitaly/Praefect
+  prepare_praefect_db.yml # create Praefect DB/user from bastion
   prepare_gitaly_storage.yml # verified Gitaly data-volume format and mount
   configure.yml           # TLS material, Gitaly, Praefect, HAProxy
   renew_tls.yml           # separate, explicitly run rolling renewal
 roles/
   common/                 # common OS prep and service-account prerequisites
   gitlab_package/         # exact package repository/version installation
+  praefect_db/            # create the Praefect RDS role and database from bastion
   gitaly/                 # Gitaly-only config and repository data mount
   praefect/               # Praefect config, RDS CA, migrations/health checks
   haproxy/                # TCP passthrough config and runtime checks
@@ -153,6 +156,26 @@ ansible-playbook playbooks/install_gitlab_package.yml --limit gitaly:praefect
 ```
 
 Use the inventory hostname for the first command if yours differs. The role requires outbound access to GitLab's package repository and package storage URLs. After package installation, follow the manual runbook's bootstrap configuration to create the `git` service account before installing certificate keys.
+
+## Prepare the Praefect database from the bastion
+
+Add the bastion private DNS name or private IP under `[bastion]` in `inventory/lab/hosts.ini`. The `prepare_praefect_db.yml` play targets only this group; its PostgreSQL modules execute on the bastion and connect to RDS. It creates the Praefect login role/database and grants database/schema access. It does not create Praefect's application tables; one designated Praefect node runs GitLab's schema migrations later.
+
+Install the collection and encrypt the bastion variables file:
+
+```bash
+ansible-galaxy collection install -r collections/requirements.yml
+ansible-vault encrypt inventory/lab/group_vars/bastion.yml
+```
+
+Edit the encrypted file with `ansible-vault edit inventory/lab/group_vars/bastion.yml`; set the exact RDS endpoint and both passwords (`praefect_db_master_password` and `praefect_db_password`). The role installs `python3-psycopg2` on the bastion. Then validate and run:
+
+```bash
+ansible-playbook playbooks/prepare_praefect_db.yml --syntax-check
+ansible-playbook playbooks/prepare_praefect_db.yml --ask-vault-pass
+```
+
+The bastion must be reachable by Ansible and have network access to private RDS on TCP 5432. The RDS security group should allow 5432 from the bastion and Praefect security groups. Keep credentials Vault-encrypted; password-bearing tasks suppress output.
 
 ## Prepare Gitaly repository disks
 

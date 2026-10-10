@@ -1,0 +1,107 @@
+---
+- name: Validate required Praefect database settings
+  ansible.builtin.assert:
+    that:
+      - praefect_db_host | length > 0
+      - praefect_db_name | length > 0
+      - praefect_db_user | length > 0
+      - praefect_db_master_user | length > 0
+      - praefect_db_master_password | length > 0
+      - praefect_db_password | length > 0
+    fail_msg: Set the Praefect RDS endpoint and both database passwords in the Vault-encrypted bastion group_vars.
+  no_log: true
+
+- name: Ensure PostgreSQL Python driver is available on the bastion
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+    update_cache: true
+  become: true
+
+- name: Create or update the dedicated Praefect login role
+  community.postgresql.postgresql_user:
+    login_host: "{{ praefect_db_host }}"
+    login_port: "{{ praefect_db_port }}"
+    login_user: "{{ praefect_db_master_user }}"
+    login_password: "{{ praefect_db_master_password }}"
+    login_db: postgres
+    ssl_mode: "{{ praefect_db_ssl_mode }}"
+    name: "{{ praefect_db_user }}"
+    password: "{{ praefect_db_password }}"
+    encrypted: true
+    no_password_changes: false
+    state: present
+  no_log: true
+
+- name: Create Praefect database and privileges with temporary owner-role access
+  block:
+    - name: Temporarily allow the RDS master to assume the Praefect role for ownership setup
+      community.postgresql.postgresql_membership:
+        login_host: "{{ praefect_db_host }}"
+        login_port: "{{ praefect_db_port }}"
+        login_user: "{{ praefect_db_master_user }}"
+        login_password: "{{ praefect_db_master_password }}"
+        login_db: postgres
+        ssl_mode: "{{ praefect_db_ssl_mode }}"
+        group: "{{ praefect_db_user }}"
+        target_roles: "{{ praefect_db_master_user }}"
+        state: present
+      no_log: true
+
+    - name: Create the Praefect database if it does not exist
+      community.postgresql.postgresql_db:
+        login_host: "{{ praefect_db_host }}"
+        login_port: "{{ praefect_db_port }}"
+        login_user: "{{ praefect_db_master_user }}"
+        login_password: "{{ praefect_db_master_password }}"
+        maintenance_db: postgres
+        ssl_mode: "{{ praefect_db_ssl_mode }}"
+        name: "{{ praefect_db_name }}"
+        owner: "{{ praefect_db_user }}"
+        encoding: UTF8
+        state: present
+      no_log: true
+
+    - name: Grant Praefect access to its database
+      community.postgresql.postgresql_privs:
+        login_host: "{{ praefect_db_host }}"
+        login_port: "{{ praefect_db_port }}"
+        login_user: "{{ praefect_db_master_user }}"
+        login_password: "{{ praefect_db_master_password }}"
+        login_db: "{{ praefect_db_name }}"
+        ssl_mode: "{{ praefect_db_ssl_mode }}"
+        type: database
+        database: "{{ praefect_db_name }}"
+        roles: "{{ praefect_db_user }}"
+        privs: CONNECT,CREATE,TEMPORARY
+        state: present
+      no_log: true
+
+    - name: Grant Praefect access to the public schema
+      community.postgresql.postgresql_privs:
+        login_host: "{{ praefect_db_host }}"
+        login_port: "{{ praefect_db_port }}"
+        login_user: "{{ praefect_db_master_user }}"
+        login_password: "{{ praefect_db_master_password }}"
+        login_db: "{{ praefect_db_name }}"
+        ssl_mode: "{{ praefect_db_ssl_mode }}"
+        type: schema
+        database: "{{ praefect_db_name }}"
+        schema: public
+        roles: "{{ praefect_db_user }}"
+        privs: USAGE,CREATE
+        state: present
+      no_log: true
+  always:
+    - name: Revoke temporary Praefect role membership from the RDS master
+      community.postgresql.postgresql_membership:
+        login_host: "{{ praefect_db_host }}"
+        login_port: "{{ praefect_db_port }}"
+        login_user: "{{ praefect_db_master_user }}"
+        login_password: "{{ praefect_db_master_password }}"
+        login_db: postgres
+        ssl_mode: "{{ praefect_db_ssl_mode }}"
+        group: "{{ praefect_db_user }}"
+        target_roles: "{{ praefect_db_master_user }}"
+        state: absent
+      no_log: true

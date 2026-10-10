@@ -1,0 +1,8 @@
+---
+- name: Prepare the Praefect database from the bastion
+  hosts: bastion
+  gather_facts: true
+  become: true
+  any_errors_fatal: true
+  roles:
+    - praefect_db

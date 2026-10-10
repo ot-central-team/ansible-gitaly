@@ -1,0 +1,11 @@
+---
+# Vault-encrypt this file before entering credentials:
+# ansible-vault encrypt inventory/lab/group_vars/bastion.yml
+
+praefect_db_host: ""
+praefect_db_port: 5432
+praefect_db_name: praefect_production
+praefect_db_user: praefect
+praefect_db_master_user: postgres
+praefect_db_master_password: ""
+praefect_db_password: ""
