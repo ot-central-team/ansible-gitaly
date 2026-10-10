@@ -38,6 +38,12 @@
     state: present
     update_cache: false
 
+- name: Ensure the GitLab service group exists before first reconfigure
+  ansible.builtin.group:
+    name: git
+    system: true
+    state: present
+
 - name: Create certificate and trust directories
   ansible.builtin.file:
     path: "{{ item.path }}"
