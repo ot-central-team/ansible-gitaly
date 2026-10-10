@@ -1,0 +1,175 @@
+---
+- name: Validate certificate host and lifetime settings
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname is match('^[A-Za-z0-9][A-Za-z0-9.-]*$')
+      - tls_leaf_validity_days | int >= 30
+      - tls_leaf_validity_days | int <= 825
+      - tls_extra_dns_names is sequence
+      - tls_extra_dns_names is not string
+    fail_msg: Check the inventory DNS name, SAN aliases, and certificate lifetime.
+
+- name: Require the existing CA and its vaulted passphrase on the bastion
+  ansible.builtin.assert:
+    that:
+      - groups['bastion'] | length == 1
+      - hostvars[groups['bastion'][0]]['tls_ca_privatekey_passphrase'] is defined
+    fail_msg: Create the CA first and define its passphrase in vaulted bastion group vars.
+  no_log: true
+
+- name: Check that the existing CA key and certificate are present on the bastion
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ tls_ca_privatekey_path }}"
+    - "{{ tls_ca_certificate_path }}"
+  register: tls_ca_file_checks
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: Stop if the CA has not been initialized
+  ansible.builtin.assert:
+    that:
+      - tls_ca_file_checks.results | map(attribute='stat.exists') | min
+    fail_msg: Run playbooks/create_internal_tls_ca.yml before issuing node certificates.
+
+- name: Install Python cryptography support on workload hosts
+  ansible.builtin.apt:
+    name: python3-cryptography
+    state: present
+    update_cache: false
+
+- name: Create certificate and trust directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ tls_leaf_directory }}", group: git, mode: '0750' }
+    - { path: "{{ tls_trusted_certificates_directory }}", group: root, mode: '0755' }
+
+- name: Create local CSR and certificate staging directories
+  ansible.builtin.file:
+    path: "{{ tls_local_workdir }}/{{ item }}"
+    state: directory
+    mode: '0700'
+  loop:
+    - csr
+    - certificates
+  delegate_to: localhost
+  become: false
+
+- name: Fetch the existing public CA certificate from the bastion
+  ansible.builtin.fetch:
+    src: "{{ tls_ca_certificate_path }}"
+    dest: "{{ tls_local_workdir }}/ca.crt"
+    flat: true
+    fail_on_missing: true
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: Create this node's private key locally on the node
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_leaf_privatekey_path }}"
+    type: RSA
+    size: 3072
+    regenerate: never
+    owner: root
+    group: git
+    mode: '0640'
+
+- name: Create a CSR whose SAN contains this node's internal DNS name and aliases
+  community.crypto.openssl_csr:
+    path: "{{ tls_leaf_csr_path }}"
+    privatekey_path: "{{ tls_leaf_privatekey_path }}"
+    common_name: "{{ inventory_hostname }}"
+    subject_alt_name: "{{ ([inventory_hostname] + tls_extra_dns_names) | unique | map('regex_replace', '^', 'DNS:') | list }}"
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Fetch the public CSR to the controller
+  ansible.builtin.fetch:
+    src: "{{ tls_leaf_csr_path }}"
+    dest: "{{ tls_local_workdir }}/csr/{{ inventory_hostname }}.csr"
+    flat: true
+    fail_on_missing: true
+
+- name: Create the CA signing workspace on the bastion
+  ansible.builtin.file:
+    path: "{{ tls_ca_directory }}/requests"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: Copy this node's CSR to the bastion for signing
+  ansible.builtin.copy:
+    src: "{{ tls_local_workdir }}/csr/{{ inventory_hostname }}.csr"
+    dest: "{{ tls_ca_directory }}/requests/{{ inventory_hostname }}.csr"
+    owner: root
+    group: root
+    mode: '0600'
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: Sign this node's CSR on the bastion CA
+  community.crypto.x509_certificate:
+    path: "{{ tls_ca_directory }}/issued-{{ inventory_hostname }}.crt"
+    csr_path: "{{ tls_ca_directory }}/requests/{{ inventory_hostname }}.csr"
+    ownca_path: "{{ tls_ca_certificate_path }}"
+    ownca_privatekey_path: "{{ tls_ca_privatekey_path }}"
+    ownca_privatekey_passphrase: "{{ hostvars[groups['bastion'][0]]['tls_ca_privatekey_passphrase'] }}"
+    provider: ownca
+    ownca_not_before: '-1d'
+    ownca_not_after: "+{{ tls_leaf_validity_days }}d"
+    ownca_digest: sha256
+    force: "{{ tls_certificate_force_renew | bool }}"
+    owner: root
+    group: root
+    mode: '0644'
+  delegate_to: "{{ groups['bastion'][0] }}"
+  no_log: true
+
+- name: Fetch the signed public certificate to the controller
+  ansible.builtin.fetch:
+    src: "{{ tls_ca_directory }}/issued-{{ inventory_hostname }}.crt"
+    dest: "{{ tls_local_workdir }}/certificates/{{ inventory_hostname }}.crt"
+    flat: true
+    fail_on_missing: true
+  delegate_to: "{{ groups['bastion'][0] }}"
+
+- name: Install this node's signed server certificate
+  ansible.builtin.copy:
+    src: "{{ tls_local_workdir }}/certificates/{{ inventory_hostname }}.crt"
+    dest: "{{ tls_leaf_certificate_path }}"
+    owner: root
+    group: git
+    mode: '0640'
+  register: tls_leaf_certificate_deployment
+
+- name: Install the CA certificate into GitLab's trusted certificate directory
+  ansible.builtin.copy:
+    src: "{{ tls_local_workdir }}/ca.crt"
+    dest: "{{ tls_trusted_certificates_directory }}/repo-data-internal-ca.crt"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Remove the temporary CSR from this node
+  ansible.builtin.file:
+    path: "{{ tls_leaf_csr_path }}"
+    state: absent
+
+- name: Report certificate installation without activating TLS
+  ansible.builtin.debug:
+    msg: >-
+      Installed the {{ tls_leaf_validity_days }}-day certificate for
+      {{ inventory_hostname }}. TLS has not been enabled or reconfigured;
+      service activation and rolling renewal are separate steps.
+  when: tls_leaf_certificate_deployment is changed
