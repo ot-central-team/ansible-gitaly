@@ -17,15 +17,17 @@ Set two different random values as vaulted inventory variables:
 
 - `praefect_external_token`: used by clients to authenticate to Praefect.
 - `praefect_internal_token`: shared by Praefect and all Gitaly nodes; define
-  this once in `inventory/lab/group_vars/all.yml` so both groups receive it.
+  this once in `inventory/lab/group_vars/all/vault.yml` so both groups receive it.
 
-Define `praefect_external_token` in `inventory/lab/group_vars/praefect.yml`.
+Define `praefect_external_token` in `inventory/lab/group_vars/praefect/vault.yml`.
 
 For example, generate values with `openssl rand -hex 32`, then add them as
 Ansible Vault encrypted variables. Do not commit plaintext tokens.
 
-The role reads `praefect_db_host` and `praefect_db_password` from the single
-host in the `bastion` group, where the existing database role keeps them.
+The role reads database connection settings from
+`inventory/lab/group_vars/bastion/vars.yml` and the database password from
+`inventory/lab/group_vars/bastion/vault.yml`, through the single host in the
+`bastion` group.
 
 ## Run
 

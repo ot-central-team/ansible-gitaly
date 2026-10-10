@@ -24,8 +24,8 @@ It disables Rails migrations on the storage nodes.
 
 Generate the shared token with `openssl rand -hex 32` and store
 `praefect_internal_token` as a vaulted variable in
-`inventory/lab/group_vars/all.yml`. Store the separate
-`praefect_external_token` in `inventory/lab/group_vars/praefect.yml`.
+`inventory/lab/group_vars/all/vault.yml`. Store the separate
+`praefect_external_token` in `inventory/lab/group_vars/praefect/vault.yml`.
 
 The lab currently sets `gitaly_configure_gitlab_callbacks: false` because its
 GitLab application does not exist yet. In this staging state, Gitaly can serve

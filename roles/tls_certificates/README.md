@@ -15,7 +15,7 @@ reconfigure`, or restart services. TLS activation and a monitored rolling
 renewal plan must be completed separately before production traffic uses TLS.
 
 Before running the playbook, add a unique passphrase of at least 16 characters
-to the already-vaulted `inventory/lab/group_vars/bastion.yml` file:
+to the vaulted `inventory/lab/group_vars/bastion/vault.yml` file:
 
 ```yaml
 tls_ca_privatekey_passphrase: "use-a-long-unique-secret"
@@ -54,7 +54,7 @@ bastion; it does not create or renew the CA.
 The inventory hostname is placed in each certificate's Subject Alternative
 Name. For Praefect, add the DNS name clients actually use (for example, the
 Praefect load-balancer name) to `tls_extra_dns_names` in
-`inventory/lab/group_vars/praefect.yml` before issuing certificates. The
+`inventory/lab/group_vars/praefect/vars.yml` before issuing certificates. The
 current `[haproxy]` group is empty, so this playbook does not configure or issue
 a frontend certificate for HAProxy.
 
