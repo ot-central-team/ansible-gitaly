@@ -1,8 +1,6 @@
 ansible_user: ubuntu
 ansible_become: true
 gitlab_ee_version: ""
-praefect_public_endpoint: praefect-lab.tyagi.fun
-private_dns_zone: gitaly-lab.internal
 cluster_cidr: 172.31.0.0/16
 ssh_sources:
   - "{{ cluster_cidr }}"

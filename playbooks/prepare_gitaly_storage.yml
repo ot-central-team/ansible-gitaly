@@ -1,0 +1,8 @@
+---
+- name: Prepare and mount each Gitaly repository volume
+  hosts: gitaly
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - gitaly

@@ -1,0 +1,5 @@
+---
+gitaly_data_ebs_volume_id: ""
+gitaly_format_data_disk: false
+gitaly_data_filesystem: ext4
+gitaly_data_mountpoint: /var/opt/gitlab/git-data

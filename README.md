@@ -22,7 +22,8 @@ inventory/
       haproxy.yml         # proxy backend settings (to add)
 playbooks/
   prepare.yml             # safe OS prerequisites, package installation
-  configure.yml           # disks, TLS material, Gitaly, Praefect, HAProxy
+  prepare_gitaly_storage.yml # verified Gitaly data-volume format and mount
+  configure.yml           # TLS material, Gitaly, Praefect, HAProxy
   renew_tls.yml           # separate, explicitly run rolling renewal
 roles/
   common/                 # common OS prep and service-account prerequisites
@@ -134,5 +135,21 @@ Re-running keeps the requested rules present without duplicating them. Existing 
 
 `--check --diff` is useful after UFW is installed. On a fresh VM, check mode cannot actually install UFW, so subsequent UFW tasks may fail because its executable is absent.
 
-This playbook prepares the firewall only; it does not yet install or configure GitLab services, certificates, or HAProxy. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
+The firewall playbook prepares the OS firewall. GitLab service configuration, certificates, and HAProxy remain future role work. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
+
+## Prepare Gitaly repository disks
+
+The Gitaly role identifies each attached EBS volume by its `SERIAL` (EBS volume ID), formats a blank verified volume only when explicitly enabled, then mounts it at `/var/opt/gitlab/git-data` using the filesystem UUID. It writes a persistent fstab entry and reloads systemd. It does not rely on `/dev/nvme1n1`, because AWS NVMe device numbering can differ between boots.
+
+Set `gitaly_data_ebs_volume_id` separately for each inventory host in `inventory/lab/host_vars/<inventory-host>.yml`. For the observed host, the serial is `vol04431106eceb08be5`. Its data volume is 30 GiB, while the manual lab guide specifies 50 GiB. Confirm the intended size before formatting; then set `gitaly_format_data_disk: true` for that host. Leave it false for any volume that is not confirmed blank. Collect the serial and size separately on every Gitaly VM; each server has its own EBS volume.
+
+After every Gitaly host has its own correct volume ID configured, run first against one host, then the Gitaly group:
+
+```bash
+ansible-playbook playbooks/prepare_gitaly_storage.yml --syntax-check
+ansible-playbook playbooks/prepare_gitaly_storage.yml --limit gitaly-1.repo-data.internal
+ansible-playbook playbooks/prepare_gitaly_storage.yml
+```
+
+The first command checks syntax. The second targets Gitaly-1; adjust the inventory hostname if yours differs. The final command runs on all Gitaly hosts one at a time. Formatting is destructive, so review each volume ID, size, and format setting before running.
 
