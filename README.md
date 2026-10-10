@@ -21,7 +21,8 @@ inventory/
       praefect.yml        # Praefect/RDS settings (to add)
       haproxy.yml         # proxy backend settings (to add)
 playbooks/
-  prepare.yml             # safe OS prerequisites, package installation
+  prepare.yml             # common OS and firewall preparation
+  install_storage_package.yml # exact-version GitLab package on Gitaly/Praefect
   prepare_gitaly_storage.yml # verified Gitaly data-volume format and mount
   configure.yml           # TLS material, Gitaly, Praefect, HAProxy
   renew_tls.yml           # separate, explicitly run rolling renewal
@@ -136,6 +137,22 @@ Re-running keeps the requested rules present without duplicating them. Existing 
 `--check --diff` is useful after UFW is installed. On a fresh VM, check mode cannot actually install UFW, so subsequent UFW tasks may fail because its executable is absent.
 
 The firewall playbook prepares the OS firewall. GitLab service configuration, certificates, and HAProxy remain future role work. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
+
+## Install the GitLab package on storage VMs
+
+The `gitlab_package` role installs the same exact GitLab EE package version on Gitaly and Praefect. It adds the official apt repository, creates `/etc/gitlab/skip-auto-reconfigure` before package installation so the storage VMs do not start as standalone GitLab instances, and holds the installed version. It does not write `gitlab.rb` or configure Gitaly/Praefect services.
+
+Set `gitlab_ee_version` in `inventory/lab/group_vars/all.yml` to the exact package version compatible with the GitLab application, for example `18.8.2-ee.0` (example only). The value must not be blank. GitLab's official Ubuntu install guide covers repository and package setup: [GitLab package install](https://docs.gitlab.com/install/package/ubuntu/).
+
+Run on one node first, then on all inventoried Gitaly and Praefect VMs:
+
+```bash
+ansible-playbook playbooks/install_storage_package.yml --syntax-check
+ansible-playbook playbooks/install_storage_package.yml --limit gitaly-1.repo-data.internal
+ansible-playbook playbooks/install_storage_package.yml --limit gitaly:praefect
+```
+
+Use the inventory hostname for the first command if yours differs. The role requires outbound access to GitLab's package repository and package storage URLs. After package installation, follow the manual runbook's bootstrap configuration to create the `git` service account before installing certificate keys.
 
 ## Prepare Gitaly repository disks
 

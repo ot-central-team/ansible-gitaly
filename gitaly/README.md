@@ -346,6 +346,8 @@ In that block, `wipefs --no-act` only inspects existing filesystem signatures; `
 
 Use the **exact GitLab application version** agreed in §3. Example package syntax is `X.Y.Z-ee.0`; that is not a literal version. This guide uses the EE package, including for GitLab Free; do not mix arbitrary releases. Review the [Ubuntu installation instructions](https://docs.gitlab.com/install/package/ubuntu/) if your target release does not support Ubuntu24.04.
 
+To install with Ansible, use the `gitlab_package` role and [installation playbook](../README.md#install-the-gitlab-package-on-storage-vms). That role replaces the manual package-install commands below; do not run both methods on the same node. The following commands remain the manual alternative.
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl ca-certificates openssh-server tzdata perl openssl
