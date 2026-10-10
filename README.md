@@ -22,7 +22,7 @@ inventory/
       haproxy.yml         # proxy backend settings (to add)
 playbooks/
   prepare.yml             # common OS and firewall preparation
-  install_storage_package.yml # exact-version GitLab package on Gitaly/Praefect
+  install_gitlab_package.yml # exact-version GitLab package on Gitaly/Praefect
   prepare_gitaly_storage.yml # verified Gitaly data-volume format and mount
   configure.yml           # TLS material, Gitaly, Praefect, HAProxy
   renew_tls.yml           # separate, explicitly run rolling renewal
@@ -147,9 +147,9 @@ Set `gitlab_ee_version` in `inventory/lab/group_vars/all.yml` to the exact packa
 Run on one node first, then on all inventoried Gitaly and Praefect VMs:
 
 ```bash
-ansible-playbook playbooks/install_storage_package.yml --syntax-check
-ansible-playbook playbooks/install_storage_package.yml --limit gitaly-1.repo-data.internal
-ansible-playbook playbooks/install_storage_package.yml --limit gitaly:praefect
+ansible-playbook playbooks/install_gitlab_package.yml --syntax-check
+ansible-playbook playbooks/install_gitlab_package.yml --limit gitaly-1.repo-data.internal
+ansible-playbook playbooks/install_gitlab_package.yml --limit gitaly:praefect
 ```
 
 Use the inventory hostname for the first command if yours differs. The role requires outbound access to GitLab's package repository and package storage URLs. After package installation, follow the manual runbook's bootstrap configuration to create the `git` service account before installing certificate keys.
