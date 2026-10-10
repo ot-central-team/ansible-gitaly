@@ -70,6 +70,7 @@
         login_password: "{{ praefect_db_master_password }}"
         login_db: "{{ praefect_db_name }}"
         ssl_mode: "{{ praefect_db_ssl_mode }}"
+        session_role: "{{ praefect_db_user }}"
         type: database
         database: "{{ praefect_db_name }}"
         roles: "{{ praefect_db_user }}"
@@ -85,9 +86,10 @@
         login_password: "{{ praefect_db_master_password }}"
         login_db: "{{ praefect_db_name }}"
         ssl_mode: "{{ praefect_db_ssl_mode }}"
+        session_role: "{{ praefect_db_user }}"
         type: schema
         database: "{{ praefect_db_name }}"
-        schema: public
+        objs: public
         roles: "{{ praefect_db_user }}"
         privs: USAGE,CREATE
         state: present
