@@ -34,6 +34,21 @@
   delegate_to: localhost
   become: false
 
+- name: Inspect existing CA material before initialization
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ tls_ca_privatekey_path }}"
+    - "{{ tls_ca_csr_path }}"
+    - "{{ tls_ca_certificate_path }}"
+  register: tls_existing_ca
+
+- name: Refuse to replace a missing CA key when public material already exists
+  ansible.builtin.assert:
+    that:
+      - tls_existing_ca.results[0].stat.exists or not (tls_existing_ca.results[1].stat.exists or tls_existing_ca.results[2].stat.exists)
+    fail_msg: CA key is missing but CA material exists. Restore the original key; bootstrap will not rotate the CA.
+
 - name: Create encrypted CA private key on the bastion
   community.crypto.openssl_privatekey:
     path: "{{ tls_ca_privatekey_path }}"
@@ -46,6 +61,7 @@
     group: root
     mode: '0600'
   no_log: true
+  when: not tls_existing_ca.results[0].stat.exists
 
 - name: Create CA certificate signing request
   community.crypto.openssl_csr:
@@ -64,6 +80,7 @@
     group: root
     mode: '0600'
   no_log: true
+  when: not tls_existing_ca.results[1].stat.exists and not tls_existing_ca.results[2].stat.exists
 
 - name: Create the self-signed root CA certificate
   community.crypto.x509_certificate:
@@ -79,6 +96,7 @@
     group: root
     mode: '0644'
   no_log: true
+  when: not tls_existing_ca.results[2].stat.exists
 
 - name: Fetch the public CA certificate to the controller for distribution
   ansible.builtin.fetch:

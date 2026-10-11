@@ -32,6 +32,39 @@
       - tls_ca_file_checks.results | map(attribute='stat.exists') | min
     fail_msg: Run playbooks/configure_cluster.yml --tags ca before issuing node certificates.
 
+- name: Refuse certificate rotation through the bootstrap workflow
+  ansible.builtin.assert:
+    that:
+      - not (tls_certificate_force_renew | bool)
+    fail_msg: Bootstrap preserves existing TLS material. Use a separate planned renewal workflow, not force renewal here.
+
+- name: Inspect existing node TLS material
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ tls_leaf_privatekey_path }}"
+    - "{{ tls_leaf_csr_path }}"
+    - "{{ tls_leaf_certificate_path }}"
+  register: tls_existing_leaf
+
+- name: Inspect the previously issued certificate on the bastion
+  ansible.builtin.stat:
+    path: "{{ tls_ca_directory }}/issued-{{ inventory_hostname }}.crt"
+  delegate_to: "{{ groups['bastion'][0] }}"
+  register: tls_existing_issued
+
+- name: Refuse to regenerate a lost node private key
+  ansible.builtin.assert:
+    that:
+      - tls_existing_leaf.results[0].stat.exists or not (tls_existing_leaf.results[1].stat.exists or tls_existing_leaf.results[2].stat.exists or tls_existing_issued.stat.exists)
+    fail_msg: Existing CSR/certificate found without its private key. Restore the original key; bootstrap will not replace it.
+
+- name: Require explicit recovery of a missing deployed certificate
+  ansible.builtin.assert:
+    that:
+      - tls_existing_leaf.results[2].stat.exists or not tls_existing_issued.stat.exists
+    fail_msg: A signed certificate exists on the bastion but is missing on this node. Restore the matching certificate explicitly; bootstrap will not reissue it.
+
 - name: Install cryptography support and system certificate tools on workload hosts
   ansible.builtin.apt:
     name:
@@ -87,6 +120,7 @@
     owner: root
     group: git
     mode: '0640'
+  when: not tls_existing_leaf.results[0].stat.exists
 
 - name: Create a CSR whose SAN contains this node's internal DNS name and aliases
   community.crypto.openssl_csr:
@@ -102,6 +136,7 @@
     owner: root
     group: root
     mode: '0600'
+  when: not tls_existing_leaf.results[1].stat.exists and not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
 
 - name: Fetch the public CSR to the controller
   ansible.builtin.fetch:
@@ -109,6 +144,7 @@
     dest: "{{ tls_local_workdir }}/csr/{{ inventory_hostname }}.csr"
     flat: true
     fail_on_missing: true
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
 
 - name: Create the CA signing workspace on the bastion
   ansible.builtin.file:
@@ -118,6 +154,29 @@
     group: root
     mode: '0700'
   delegate_to: "{{ groups['bastion'][0] }}"
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
+
+- name: Inspect the archived CSR before copying
+  ansible.builtin.stat:
+    path: "{{ tls_ca_directory }}/requests/{{ inventory_hostname }}.csr"
+    checksum_algorithm: sha256
+  delegate_to: "{{ groups['bastion'][0] }}"
+  register: tls_archived_csr
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
+
+- name: Inspect the node CSR fingerprint
+  ansible.builtin.stat:
+    path: "{{ tls_leaf_csr_path }}"
+    checksum_algorithm: sha256
+  register: tls_node_csr
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
+
+- name: Refuse to overwrite a different archived CSR
+  ansible.builtin.assert:
+    that:
+      - not tls_archived_csr.stat.exists or tls_archived_csr.stat.checksum == tls_node_csr.stat.checksum
+    fail_msg: Archived CSR differs from this node's CSR. Restore consistent TLS material before continuing.
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
 
 - name: Copy this node's CSR to the bastion for signing
   ansible.builtin.copy:
@@ -127,6 +186,7 @@
     group: root
     mode: '0600'
   delegate_to: "{{ groups['bastion'][0] }}"
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
 
 - name: Sign this node's CSR on the bastion CA
   community.crypto.x509_certificate:
@@ -139,12 +199,13 @@
     ownca_not_before: '-1d'
     ownca_not_after: "+{{ tls_leaf_validity_days }}d"
     ownca_digest: sha256
-    force: "{{ tls_certificate_force_renew | bool }}"
+    force: false
     owner: root
     group: root
     mode: '0644'
   delegate_to: "{{ groups['bastion'][0] }}"
   no_log: true
+  when: not tls_existing_leaf.results[2].stat.exists and not tls_existing_issued.stat.exists
 
 - name: Fetch the signed public certificate to the controller
   ansible.builtin.fetch:
@@ -153,6 +214,7 @@
     flat: true
     fail_on_missing: true
   delegate_to: "{{ groups['bastion'][0] }}"
+  when: not tls_existing_leaf.results[2].stat.exists
 
 - name: Install this node's signed server certificate
   ansible.builtin.copy:
@@ -162,6 +224,32 @@
     group: git
     mode: '0640'
   register: tls_leaf_certificate_deployment
+  when: not tls_existing_leaf.results[2].stat.exists
+
+- name: Read the source CA fingerprint
+  ansible.builtin.stat:
+    path: "{{ tls_ca_certificate_path }}"
+    checksum_algorithm: sha256
+  delegate_to: "{{ groups['bastion'][0] }}"
+  register: tls_source_ca
+
+- name: Inspect existing trust certificates
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ tls_trusted_certificates_directory }}/repo-data-internal-ca.crt"
+    - /usr/local/share/ca-certificates/repo-data-internal-ca.crt
+  register: tls_existing_trust
+
+- name: Refuse implicit CA trust replacement
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.checksum == tls_source_ca.stat.checksum
+    fail_msg: Existing trusted CA differs from the bastion CA. Plan a CA rotation explicitly; bootstrap will not overwrite it.
+  loop: "{{ tls_existing_trust.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
 - name: Install the CA certificate into GitLab's trusted certificate directory
   ansible.builtin.copy:
@@ -185,11 +273,6 @@
     argv:
       - update-ca-certificates
   when: tls_system_ca is changed
-
-- name: Remove the temporary CSR from this node
-  ansible.builtin.file:
-    path: "{{ tls_leaf_csr_path }}"
-    state: absent
 
 - name: Report certificate installation without activating TLS
   ansible.builtin.debug:

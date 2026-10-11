@@ -68,10 +68,19 @@ sudo openssl verify \
   /etc/gitlab/ssl/server.crt
 ```
 
-To force a new leaf certificate, use
-`-e tls_certificate_force_renew=true`. This only replaces the certificate
-files; it does not reload Praefect or Gitaly. Do not use it for an active TLS
-service until the later rolling-renewal procedure is in place.
+Bootstrap preserves existing private keys, CSRs and certificates. Creation tasks
+run only for missing material; existing cryptographic files are not reconciled
+when names, SANs, passphrases or lifetimes change. Node CSRs are now retained.
+On older deployments where the role deleted a CSR, an existing server certificate
+is sufficient to skip issuance; the missing CSR is not recreated on a rerun.
+Missing private keys alongside existing public material, differing archived CSRs,
+missing deployed certificates with an existing signed archive, and changed CA
+trust files cause a clear failure requiring explicit recovery or rotation.
+
+`tls_certificate_force_renew=true` is rejected by bootstrap. Expired certificates
+are also preserved, not automatically renewed. Plan renewal separately before
+expiry. Staging copies and permissions can still be maintained by Ansible;
+this preservation policy concerns cryptographic file contents.
 
 Select each operation using `ansible.builtin.import_role` with `name: tls`
 and `tasks_from: ca_generation.yml` or `tasks_from: distribution_tls.yml`.
