@@ -1,2 +1,2 @@
 ---
-praefect_internal_token: "703d338d7bac6299de552763692f20b6e2e5fe24e2f1e8be59baa49ad2dad1c3"
+praefect_internal_token: "openssl rand -hex 32"

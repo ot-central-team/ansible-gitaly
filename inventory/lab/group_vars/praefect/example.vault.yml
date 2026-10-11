@@ -1,2 +1,2 @@
 ---
-praefect_external_token: "096547606d7a78f77a1bd46d394f1166eea2fc3586531bbb48bac1c8ee93e3c9"
+praefect_external_token: "openssl rand -hex 32"
