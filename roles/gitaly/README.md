@@ -77,3 +77,38 @@ ansible-playbook playbooks/configure_cluster.yml --tags gitaly --ask-vault-pass
 
 Shared package installation lives in `roles/installation` and targets both
 Gitaly and Praefect through `playbooks/configure_cluster.yml --tags common,installation`.
+
+## Prepare Gitaly repository disks
+
+On every Gitaly VM, attach the dedicated EBS repository volume using the AWS
+attachment name `/dev/sdb`. Keep the root volume on its existing root-device
+mapping. Configure the shared convention in `inventory/lab/group_vars/gitaly.yml`:
+
+```yaml
+gitaly_data_attachment_name: /dev/sdb
+```
+
+No per-host volume ID is required. The role installs `nvme-cli`, reads the AWS
+attachment name from each EBS NVMe controller, and requires exactly one match.
+Linux may call that disk `/dev/nvme1n1` or a different NVMe number; the AWS
+attachment name is what selects it. This workflow requires Nitro/NVMe EBS.
+It stops if the attachment is absent/ambiguous, partitioned, layered, read-only,
+mounted elsewhere, has unexpected filesystem signatures, or would cover
+existing files at the target mountpoint. It does not attach volumes in AWS.
+
+For a confirmed new blank data disk, set `gitaly_format_data_disk: true` in its
+host variables. The default is false; existing lab opt-ins are preserved.
+Only a disk without a filesystem or detected signatures is formatted. Existing
+whole-disk ext4 volumes are reused. The filesystem UUID is still used in fstab
+at `/var/opt/gitlab/git-data`. Existing deployments must confirm the attachment
+name in AWS before rerunning; the role will not silently choose another disk.
+
+```bash
+ansible-playbook playbooks/configure_cluster.yml --tags storage --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags storage --limit gitaly-1.repo-data.internal --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags storage --ask-vault-pass
+```
+
+Disk discovery is read-only, including in check mode. On fresh VMs check mode
+cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
+fresh-disk dry run is not supported.

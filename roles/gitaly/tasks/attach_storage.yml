@@ -1,26 +1,38 @@
 ---
-- name: Find the current device path for this EBS volume ID
-  ansible.builtin.shell: >-
-    lsblk -dn -o NAME,SERIAL |
-    awk -v serial='{{ gitaly_data_ebs_volume_id | regex_replace("-", "") }}'
-    '$2 == serial { print "/dev/" $1 }'
-  args:
-    executable: /bin/bash
+- name: Install NVMe identification and filesystem tools
+  ansible.builtin.apt:
+    name:
+      - nvme-cli
+      - util-linux
+      - e2fsprogs
+    state: present
+    update_cache: true
+
+- name: Identify and validate the EBS data disk by its AWS attachment name
+  ansible.builtin.script:
+    cmd: >-
+      discover_ebs_device.py
+      {{ gitaly_data_attachment_name | quote }}
+      {{ gitaly_data_mountpoint | quote }}
+      {{ gitaly_data_filesystem | quote }}
+      {{ (gitaly_format_data_disk | bool | ternary('true', 'false')) | quote }}
+    executable: /usr/bin/python3
   register: gitaly_data_device_lookup
   changed_when: false
+  check_mode: false
 
-- name: Confirm exactly one attached disk matches the supplied EBS volume ID
-  ansible.builtin.assert:
-    that:
-      - gitaly_data_device_lookup.stdout_lines | length == 1
-    fail_msg: "Could not find exactly one attached disk for {{ gitaly_data_ebs_volume_id }}."
+- name: Store the verified data disk selection
+  ansible.builtin.set_fact:
+    gitaly_data_disk: "{{ gitaly_data_device_lookup.stdout | from_json }}"
 
 - name: Create ext4 filesystem on this host's data volume
   community.general.filesystem:
-    dev: "{{ gitaly_data_device_lookup.stdout }}"
+    dev: "{{ gitaly_data_disk.device }}"
     fstype: "{{ gitaly_data_filesystem }}"
     force: false
-  when: gitaly_format_data_disk | bool
+  when:
+    - gitaly_format_data_disk | bool
+    - gitaly_data_disk.blank | bool
 
 - name: Read the filesystem UUID
   ansible.builtin.command:
@@ -30,7 +42,7 @@
       - value
       - -s
       - UUID
-      - "{{ gitaly_data_device_lookup.stdout }}"
+      - "{{ gitaly_data_disk.device }}"
   register: gitaly_data_uuid_result
   changed_when: false
 

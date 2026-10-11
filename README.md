@@ -16,7 +16,7 @@ on the bastion, certificate distribution, Gitaly configuration, then Praefect
 configuration. It prints manual migration and health-check commands at the end;
 it does not execute migrations or declare the cluster healthy.
 
-Before running, configure inventory, per-host EBS volume IDs, formatting opt-in
+Before running, configure inventory, the shared AWS data attachment name, formatting opt-in
 for new disks, package version, and vaulted credentials. AWS VMs, RDS, private
 DNS and network access must already exist. In particular, allow Praefect and
 Gitaly peers to reach Gitaly TCP 9999, and the bastion/Praefect nodes to reach RDS
@@ -206,17 +206,35 @@ The bastion must be reachable by Ansible and have network access to private RDS 
 
 ## Prepare Gitaly repository disks
 
-The Gitaly role identifies each attached EBS volume by its `SERIAL` (EBS volume ID), formats a blank verified volume only when explicitly enabled, then mounts it at `/var/opt/gitlab/git-data` using the filesystem UUID. It writes a persistent fstab entry and reloads systemd. It does not rely on `/dev/nvme1n1`, because AWS NVMe device numbering can differ between boots.
+On every Gitaly VM, attach the dedicated EBS repository volume using the AWS
+attachment name `/dev/sdb`. Keep the root volume on its existing root-device
+mapping. Configure the shared convention in `inventory/lab/group_vars/gitaly.yml`:
 
-Set `gitaly_data_ebs_volume_id` separately for each inventory host in `inventory/lab/host_vars/<inventory-host>.yml`. For the observed host, the serial is `vol04431106eceb08be5`. Its data volume is 30 GiB, while the manual lab guide specifies 50 GiB. Confirm the intended size before formatting; then set `gitaly_format_data_disk: true` for that host. Leave it false for any volume that is not confirmed blank. Collect the serial and size separately on every Gitaly VM; each server has its own EBS volume.
-
-After every Gitaly host has its own correct volume ID configured, run first against one host, then the Gitaly group:
-
-```bash
-ansible-playbook playbooks/configure_cluster.yml --tags storage --syntax-check
-ansible-playbook playbooks/configure_cluster.yml --tags storage --limit gitaly-1.repo-data.internal
-ansible-playbook playbooks/configure_cluster.yml --tags storage
+```yaml
+gitaly_data_attachment_name: /dev/sdb
 ```
 
-The first command checks syntax. The second targets Gitaly-1; adjust the inventory hostname if yours differs. The final command runs on all Gitaly hosts one at a time. Formatting is destructive, so review each volume ID, size, and format setting before running.
+No per-host volume ID is required. The role installs `nvme-cli`, reads the AWS
+attachment name from each EBS NVMe controller, and requires exactly one match.
+Linux may call that disk `/dev/nvme1n1` or a different NVMe number; the AWS
+attachment name is what selects it. This workflow requires Nitro/NVMe EBS.
+It stops if the attachment is absent/ambiguous, partitioned, layered, read-only,
+mounted elsewhere, has unexpected filesystem signatures, or would cover
+existing files at the target mountpoint. It does not attach volumes in AWS.
 
+For a confirmed new blank data disk, set `gitaly_format_data_disk: true` in its
+host variables. The default is false; existing lab opt-ins are preserved.
+Only a disk without a filesystem or detected signatures is formatted. Existing
+whole-disk ext4 volumes are reused. The filesystem UUID is still used in fstab
+at `/var/opt/gitlab/git-data`. Existing deployments must confirm the attachment
+name in AWS before rerunning; the role will not silently choose another disk.
+
+```bash
+ansible-playbook playbooks/configure_cluster.yml --tags storage --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags storage --limit gitaly-1.repo-data.internal --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags storage --ask-vault-pass
+```
+
+Disk discovery is read-only, including in check mode. On fresh VMs check mode
+cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
+fresh-disk dry run is not supported.

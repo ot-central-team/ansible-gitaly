@@ -1,6 +1,4 @@
 ---
-# Full bootstrap workflow. AWS resources, DNS, security groups and secrets must exist.
-# Stage tags select independent operations; prerequisites must already be satisfied.
 - name: 1. Prepare VM packages and firewall
   hosts: gitaly:praefect:haproxy
   become: true

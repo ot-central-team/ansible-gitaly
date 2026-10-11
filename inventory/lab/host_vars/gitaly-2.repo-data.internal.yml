@@ -1,4 +1,3 @@
 ---
-gitaly_data_ebs_volume_id: vol0812c97d308e8ed30
 gitaly_format_data_disk: true
 gitaly_storage_name: gitaly-2

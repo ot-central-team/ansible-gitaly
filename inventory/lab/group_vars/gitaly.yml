@@ -1,4 +1,7 @@
 ---
+# Team convention: attach the dedicated EBS data volume as /dev/sdb in AWS.
+gitaly_data_attachment_name: /dev/sdb
+
 common_service_ports:
   - 9999
 
