@@ -6,6 +6,31 @@ changes. It deliberately keeps `praefect['auto_migrate']` disabled. Database
 schema migration is a separate manual action on one designated Praefect node.
 Set `praefect_refresh_rds_ca_bundle=true` for a planned CA bundle refresh.
 
+The TLS certificate role installs the public internal CA into Ubuntu's system
+trust store and runs `update-ca-certificates` when it changes. This lets manual
+checks use system trust without shell exports. Praefect also gets a persistent
+`SSL_CERT_FILE` service setting pointing to `praefect_gitaly_ca_certificate_path`.
+The CA private key stays on the bastion.
+
+To apply this trust setup to existing nodes, run from the Ansible controller:
+
+```bash
+ansible-playbook playbooks/issue_internal_tls.yml --ask-vault-pass
+ansible-playbook playbooks/configure_praefect.yml --ask-vault-pass
+```
+
+The second playbook reconfigures Praefect when its configuration changes and
+may restart the service. With a single Praefect node, schedule this for a
+maintenance window if serving traffic. Existing database migrations need not
+be rerun for this change. On Praefect, verify without shell CA overrides:
+
+```bash
+sudo env -u SSL_CERT_FILE -u SSL_CERT_DIR gitlab-ctl praefect check
+sudo cat /opt/gitlab/etc/praefect/env/SSL_CERT_FILE
+```
+
+The environment file should contain the configured public CA certificate path.
+
 The role derives Gitaly addresses from the `gitaly` inventory group and uses
 each inventory hostname as the TLS DNS name. The Gitaly storage name defaults
 to the short inventory name (for example, `gitaly-1`); the Gitaly role must use

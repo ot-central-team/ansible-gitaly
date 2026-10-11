@@ -18,6 +18,10 @@ gitaly['gitlab_secret'] = {{ gitaly_gitlab_secret_token | to_json }}
 {% endif %}
 gitaly['enable'] = true
 
+# Trust the internal CA for outgoing TLS connections to peer Gitaly nodes.
+# Preserve the other default GitLab service environment settings.
+gitaly['env']['SSL_CERT_FILE'] = {{ gitaly_ca_certificate_path | to_json }}
+
 gitaly['configuration'] = {
   # Disable plaintext. Gitaly is reachable only over TLS on port 9999.
   listen_addr: nil,

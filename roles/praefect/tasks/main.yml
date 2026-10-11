@@ -26,6 +26,7 @@
   loop:
     - "{{ praefect_tls_certificate_path }}"
     - "{{ praefect_tls_privatekey_path }}"
+    - "{{ praefect_gitaly_ca_certificate_path }}"
   register: praefect_tls_files
 
 - name: Require the Praefect TLS key and certificate before configuration

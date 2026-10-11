@@ -30,15 +30,16 @@
       - "{{ gitaly_repository_mountpoint }}"
   changed_when: false
 
-- name: Confirm this Gitaly VM has its issued TLS key and certificate
+- name: Confirm this Gitaly VM has its issued TLS key, certificate, and trusted CA
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
     - "{{ gitaly_tls_certificate_path }}"
     - "{{ gitaly_tls_privatekey_path }}"
+    - "{{ gitaly_ca_certificate_path }}"
   register: gitaly_tls_files
 
-- name: Require the Gitaly TLS key and certificate before configuration
+- name: Require the Gitaly TLS key, certificate, and trusted CA before configuration
   ansible.builtin.assert:
     that:
       - gitaly_tls_files.results | map(attribute='stat.exists') | min

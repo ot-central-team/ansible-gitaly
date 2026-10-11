@@ -3,6 +3,7 @@ gitaly_config_path: /etc/gitlab/gitlab.rb
 gitaly_tls_listen_address: '0.0.0.0:9999'
 gitaly_tls_certificate_path: /etc/gitlab/ssl/server.crt
 gitaly_tls_privatekey_path: /etc/gitlab/ssl/server.key
+gitaly_ca_certificate_path: /etc/gitlab/trusted-certs/repo-data-internal-ca.crt
 gitaly_repository_mountpoint: /var/opt/gitlab/git-data
 gitaly_repository_path: /var/opt/gitlab/git-data/repositories
 gitaly_configure_gitlab_callbacks: true

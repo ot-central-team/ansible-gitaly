@@ -22,6 +22,21 @@ The role checks that the repository mount and node TLS files exist, writes a
 root-only `/etc/gitlab/gitlab.rb`, and reconfigures only when that file changes.
 It disables Rails migrations on the storage nodes.
 
+Outgoing TLS connections use the persistent service setting
+`gitaly['env']['SSL_CERT_FILE']`, pointing to `gitaly_ca_certificate_path`
+(default `/etc/gitlab/trusted-certs/repo-data-internal-ca.crt`). The role checks
+that this public CA file exists before configuring Gitaly. The TLS certificate
+role also installs this CA into Ubuntu's system trust store on both Gitaly
+and Praefect nodes. No interactive shell export is required.
+
+For existing nodes, run `playbooks/issue_internal_tls.yml` first if the system
+trust update has not been applied, then `playbooks/configure_gitaly.yml`.
+The configuration playbook processes one node at a time. Reconfiguration may
+restart Gitaly; serial execution alone does not guarantee uninterrupted traffic.
+After deployment, check `/opt/gitlab/etc/gitaly/env/SSL_CERT_FILE` on each node
+and run `sudo gitlab-ctl praefect check` on Praefect. That check verifies
+Praefect-to-Gitaly connectivity; it is not an end-to-end replication test.
+
 Generate the shared token with `openssl rand -hex 32` and store
 `praefect_internal_token` as a vaulted variable in
 `inventory/lab/group_vars/all/vault.yml`. Store the separate

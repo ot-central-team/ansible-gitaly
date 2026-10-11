@@ -32,9 +32,11 @@
       - tls_ca_file_checks.results | map(attribute='stat.exists') | min
     fail_msg: Run playbooks/create_internal_tls_ca.yml before issuing node certificates.
 
-- name: Install Python cryptography support on workload hosts
+- name: Install cryptography support and system certificate tools on workload hosts
   ansible.builtin.apt:
-    name: python3-cryptography
+    name:
+      - python3-cryptography
+      - ca-certificates
     state: present
     update_cache: false
 
@@ -168,6 +170,21 @@
     owner: root
     group: root
     mode: '0644'
+
+- name: Install the public CA into Ubuntu's local trust directory
+  ansible.builtin.copy:
+    src: "{{ tls_local_workdir }}/ca.crt"
+    dest: /usr/local/share/ca-certificates/repo-data-internal-ca.crt
+    owner: root
+    group: root
+    mode: '0644'
+  register: tls_system_ca
+
+- name: Update the system trust store when the CA changes
+  ansible.builtin.command:
+    argv:
+      - update-ca-certificates
+  when: tls_system_ca is changed
 
 - name: Remove the temporary CSR from this node
   ansible.builtin.file:
