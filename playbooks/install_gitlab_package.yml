@@ -1,8 +1,0 @@
----
-- name: Install the agreed GitLab package on Gitaly and Praefect VMs
-  hosts: gitaly:praefect
-  become: true
-  serial: 1
-  any_errors_fatal: true
-  roles:
-    - gitlab_package

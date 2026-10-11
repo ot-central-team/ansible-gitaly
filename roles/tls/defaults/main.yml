@@ -1,4 +1,13 @@
 ---
+tls_ca_common_name: "Repo Data Internal TLS CA"
+tls_ca_directory: /etc/ansible/pki/repo-data
+tls_ca_privatekey_path: "{{ tls_ca_directory }}/ca.key"
+tls_ca_certificate_path: "{{ tls_ca_directory }}/ca.crt"
+tls_ca_csr_path: "{{ tls_ca_directory }}/ca.csr"
+tls_ca_validity_days: 3650
+tls_local_workdir: "{{ playbook_dir }}/../.ansible-tls"
+
+# Node certificate settings.
 # Matches the one-year leaf lifetime discussed. Set to 90 if you choose the
 # shorter lifetime; the renewal/timer workflow will be a separate step.
 tls_leaf_validity_days: 365
@@ -10,8 +19,6 @@ tls_leaf_csr_path: "{{ tls_leaf_directory }}/server.csr"
 tls_leaf_certificate_path: "{{ tls_leaf_directory }}/server.crt"
 tls_trusted_certificates_directory: /etc/gitlab/trusted-certs
 
-# Temporary CSR and public certificate staging on the Ansible controller.
-tls_local_workdir: "{{ playbook_dir }}/../.ansible-tls"
 
 # Add service aliases here when clients connect through a load-balancer DNS
 # name. The inventory hostname is always included automatically.

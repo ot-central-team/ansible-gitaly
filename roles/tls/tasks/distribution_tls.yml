@@ -30,7 +30,7 @@
   ansible.builtin.assert:
     that:
       - tls_ca_file_checks.results | map(attribute='stat.exists') | min
-    fail_msg: Run playbooks/create_internal_tls_ca.yml before issuing node certificates.
+    fail_msg: Run playbooks/configure_cluster.yml --tags ca before issuing node certificates.
 
 - name: Install cryptography support and system certificate tools on workload hosts
   ansible.builtin.apt:

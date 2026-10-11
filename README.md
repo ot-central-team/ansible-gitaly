@@ -1,6 +1,38 @@
 # Gitaly lab — Ansible starter layout
 
-The `common` role and `playbooks/prepare.yml` now automate apt cache refresh, UFW installation, firewall rules, and enabling UFW. The remaining roles are still scaffolds. First build and understand the lab manually using `gitaly/README.md`; then automate one tested manual step at a time. Ansible should configure the six storage VMs and HAProxy VM. AWS networking, EC2, DNS, and RDS remain out of scope initially because the current runbook creates them in the AWS Console.
+## Configure the cluster in order
+
+Run the complete bootstrap from the Ansible controller:
+
+```bash
+ansible-galaxy collection install -r collections/requirements.yml
+ansible-playbook playbooks/configure_cluster.yml --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --ask-vault-pass
+```
+
+The playbook runs OS/firewall preparation, Gitaly volume attachment, GitLab
+package installation, database/user provisioning from the bastion, CA generation
+on the bastion, certificate distribution, Gitaly configuration, then Praefect
+configuration. It prints manual migration and health-check commands at the end;
+it does not execute migrations or declare the cluster healthy.
+
+Before running, configure inventory, per-host EBS volume IDs, formatting opt-in
+for new disks, package version, and vaulted credentials. AWS VMs, RDS, private
+DNS and network access must already exist. In particular, allow Praefect and
+Gitaly peers to reach Gitaly TCP 9999, and the bastion/Praefect nodes to reach RDS
+TCP 5432. No AWS resources are provisioned by this playbook.
+
+Optional stage tags: `common`, `storage`, `installation`, `database`, `ca`,
+`certificates`, `gitaly`, `praefect`, `next_steps`. Selected stages assume their
+prerequisites are already complete. Avoid limiting a first full bootstrap to
+workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is only one cluster playbook.
+
+Reconfiguration can restart services; serial execution is not a zero-downtime
+guarantee. HAProxy gets common preparation only; Rails, HAProxy service setup
+and automatic TLS renewal are not part of this bootstrap.
+
+
+`playbooks/configure_cluster.yml --tags common,installation` first runs the `common` role on Gitaly, Praefect, and HAProxy, then installs the pinned GitLab package on Gitaly and Praefect only. AWS networking, EC2, DNS, and RDS instance creation remain separate.
 
 ## What Ansible is
 
@@ -22,20 +54,15 @@ inventory/
       haproxy.yml         # proxy backend settings (to add)
       bastion.yml         # bastion-only RDS administration settings (Vault)
 playbooks/
-  prepare.yml             # common OS and firewall preparation
-  install_gitlab_package.yml # exact-version GitLab package on Gitaly/Praefect
-  prepare_praefect_db.yml # create Praefect DB/user from bastion
-  prepare_gitaly_storage.yml # verified Gitaly data-volume format and mount
-  configure.yml           # TLS material, Gitaly, Praefect, HAProxy
-  renew_tls.yml           # separate, explicitly run rolling renewal
+  configure_cluster.yml   # ordered setup; stage tags for individual operations
 roles/
   common/                 # common OS prep and service-account prerequisites
-  gitlab_package/         # exact package repository/version installation
-  praefect_db/            # create the Praefect RDS role and database from bastion
-  gitaly/                 # Gitaly-only config and repository data mount
+  db/                     # create the Praefect RDS role and database from bastion
+  installation/           # shared GitLab package installation
+  gitaly/                 # Gitaly storage and service configuration
   praefect/               # Praefect config, RDS CA, migrations/health checks
   haproxy/                # TCP passthrough config and runtime checks
-  tls_certificates/       # install pre-issued CA/leaf material; no CA key on VMs
+  tls/                    # CA generation, certificate distribution; renewal placeholder
 ```
 
 Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml` (overridable safe defaults), `templates/` (Jinja2 config templates), and optionally `handlers/main.yml` (restart/reload only when configuration changes). `files/` is for static assets. Add role subfolders only when there is a real need; do not create one role per server.
@@ -43,11 +70,11 @@ Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml
 ## Why these roles
 
 - `common`: shared OS prerequisites and first-install preparation.
-- `gitlab_package`: common exact-version GitLab EE package installation on all six storage nodes.
-- `gitaly`: Gitaly-specific data disk mount and service configuration; applied only to `gitaly` hosts.
+- `installation`: shared GitLab package installation on both Gitaly and Praefect.
+- `gitaly`: independently selected data disk preparation and service configuration, targeting only Gitaly.
 - `praefect`: service configuration on the three Praefect nodes. Database creation/migration must be guarded and run once, not independently on every node.
 - `haproxy`: TCP passthrough config on the dedicated proxy only.
-- `tls_certificates`: distribute public CA trust and each host's own **pre-issued** leaf certificate/key with strict ownership/modes. Keep CA signing outside this role and off the VMs.
+- `tls`: separate task files for CA generation on the bastion and certificate issuance/distribution to workload hosts. CA signing stays on the bastion. Renewal remains a placeholder.
 
 TLS renewal should be a separate, deliberate playbook/workflow, not part of every normal deployment run. Praefect renewal needs a drain/verify/ready sequence via HAProxy; Gitaly renewal needs one node at a time and replica health checks. Ansible can automate those steps, but a service restart may still interrupt active RPCs; do not promise zero downtime.
 
@@ -120,17 +147,17 @@ Check connectivity and syntax, then run against one node:
 
 ```bash
 ansible gitaly:praefect -m ping --private-key ~/.ssh/lab-key.pem
-ansible-playbook playbooks/prepare.yml --syntax-check
-ansible-playbook playbooks/prepare.yml --limit REPLACE_FIRST_GITALY_IP --private-key ~/.ssh/lab-key.pem
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --syntax-check
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit REPLACE_FIRST_GITALY_IP --private-key ~/.ssh/lab-key.pem
 ```
 
 Keep your SSH session open and verify a new connection after the first run. Then run either group, or both:
 
 ```bash
-ansible-playbook playbooks/prepare.yml --limit gitaly --private-key ~/.ssh/lab-key.pem
-ansible-playbook playbooks/prepare.yml --limit praefect --private-key ~/.ssh/lab-key.pem
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly --private-key ~/.ssh/lab-key.pem
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit praefect --private-key ~/.ssh/lab-key.pem
 # All inventoried Gitaly, Praefect and HAProxy hosts:
-ansible-playbook playbooks/prepare.yml --private-key ~/.ssh/lab-key.pem
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --private-key ~/.ssh/lab-key.pem
 ```
 
 Add `--ask-become-pass` if your SSH user requires a sudo password. Hosts are processed one at a time. SSH and service allow rules are installed before default deny and UFW activation. The role refreshes apt metadata but does not upgrade all packages.
@@ -139,27 +166,27 @@ Re-running keeps the requested rules present without duplicating them. Existing 
 
 `--check --diff` is useful after UFW is installed. On a fresh VM, check mode cannot actually install UFW, so subsequent UFW tasks may fail because its executable is absent.
 
-The firewall playbook prepares the OS firewall. GitLab service configuration, certificates, and HAProxy remain future role work. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
+The cluster playbook includes OS/firewall preparation and GitLab package installation. Service configuration and TLS use separate playbooks. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
 
 ## Install the GitLab package on storage VMs
 
-The `gitlab_package` role installs the same exact GitLab EE package version on Gitaly and Praefect. It adds the official apt repository, creates `/etc/gitlab/skip-auto-reconfigure` before package installation so the storage VMs do not start as standalone GitLab instances, and holds the installed version. It does not write `gitlab.rb` or configure Gitaly/Praefect services.
+The `installation` role installs the same exact GitLab EE package version on Gitaly and Praefect. It adds the official apt repository, creates `/etc/gitlab/skip-auto-reconfigure` before package installation so the storage VMs do not start as standalone GitLab instances, and holds the installed version. It does not write `gitlab.rb` or configure Gitaly/Praefect services.
 
 Set `gitlab_ee_version` in `inventory/lab/group_vars/all.yml` to the exact package version compatible with the GitLab application, for example `18.8.2-ee.0` (example only). The value must not be blank. GitLab's official Ubuntu install guide covers repository and package setup: [GitLab package install](https://docs.gitlab.com/install/package/ubuntu/).
 
-Run on one node first, then on all inventoried Gitaly and Praefect VMs:
+The default preparation run performs both stages. To select only firewall preparation, use `--tags common`; to select only package installation, use `--tags installation`. Run on one node first, then expand:
 
 ```bash
-ansible-playbook playbooks/install_gitlab_package.yml --syntax-check
-ansible-playbook playbooks/install_gitlab_package.yml --limit gitaly-1.repo-data.internal
-ansible-playbook playbooks/install_gitlab_package.yml --limit gitaly:praefect
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --syntax-check
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly-1.repo-data.internal
+ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly:praefect
 ```
 
 Use the inventory hostname for the first command if yours differs. The role requires outbound access to GitLab's package repository and package storage URLs. After package installation, follow the manual runbook's bootstrap configuration to create the `git` service account before installing certificate keys.
 
 ## Prepare the Praefect database from the bastion
 
-Add the bastion private DNS name or private IP under `[bastion]` in `inventory/lab/hosts.ini`. The `prepare_praefect_db.yml` play targets only this group; its PostgreSQL modules execute on the bastion and connect to RDS. It creates the Praefect login role/database and grants database/schema access. It does not create Praefect's application tables; one designated Praefect node runs GitLab's schema migrations later.
+Add the bastion private DNS name or private IP under `[bastion]` in `inventory/lab/hosts.ini`. The cluster playbook’s `database` stage targets only this group; its PostgreSQL modules execute on the bastion and connect to RDS. It creates the Praefect login role/database and grants database/schema access. It does not create Praefect's application tables; one designated Praefect node runs GitLab's schema migrations later.
 
 Install the collection and encrypt the bastion variables file:
 
@@ -171,8 +198,8 @@ ansible-vault encrypt inventory/lab/group_vars/bastion.yml
 Edit the encrypted file with `ansible-vault edit inventory/lab/group_vars/bastion.yml`; set the exact RDS endpoint and both passwords (`praefect_db_master_password` and `praefect_db_password`). The role installs `python3-psycopg2` on the bastion. Then validate and run:
 
 ```bash
-ansible-playbook playbooks/prepare_praefect_db.yml --syntax-check
-ansible-playbook playbooks/prepare_praefect_db.yml --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags database --syntax-check
+ansible-playbook playbooks/configure_cluster.yml --tags database --ask-vault-pass
 ```
 
 The bastion must be reachable by Ansible and have network access to private RDS on TCP 5432. The RDS security group should allow 5432 from the bastion and Praefect security groups. Keep credentials Vault-encrypted; password-bearing tasks suppress output.
@@ -186,9 +213,9 @@ Set `gitaly_data_ebs_volume_id` separately for each inventory host in `inventory
 After every Gitaly host has its own correct volume ID configured, run first against one host, then the Gitaly group:
 
 ```bash
-ansible-playbook playbooks/prepare_gitaly_storage.yml --syntax-check
-ansible-playbook playbooks/prepare_gitaly_storage.yml --limit gitaly-1.repo-data.internal
-ansible-playbook playbooks/prepare_gitaly_storage.yml
+ansible-playbook playbooks/configure_cluster.yml --tags storage --syntax-check
+ansible-playbook playbooks/configure_cluster.yml --tags storage --limit gitaly-1.repo-data.internal
+ansible-playbook playbooks/configure_cluster.yml --tags storage
 ```
 
 The first command checks syntax. The second targets Gitaly-1; adjust the inventory hostname if yours differs. The final command runs on all Gitaly hosts one at a time. Formatting is destructive, so review each volume ID, size, and format setting before running.

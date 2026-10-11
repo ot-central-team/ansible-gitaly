@@ -1,8 +1,27 @@
-# Gitaly configuration role
+# Gitaly role
 
-This role configures the Gitaly service and its TLS listener. It is separate
-from `roles/gitaly`, which formats and mounts the EBS repository data volume.
-The repository filesystem must already be mounted before this role runs.
+This role contains two independently selectable task files:
+
+- `tasks/attach_storage.yml`: format and mount the EBS repository volume.
+- `tasks/configuration.yml`: configure the Gitaly service and TLS listener.
+
+Both use `defaults/main.yml`. The configuration template is in
+`templates/gitlab.rb.j2`. The repository filesystem, GitLab package, and TLS
+certificates must be ready before running the configuration tasks.
+
+Select the desired task file in your playbook:
+
+```yaml
+tasks:
+  - name: Configure the Gitaly service
+    ansible.builtin.import_role:
+      name: gitaly
+      tasks_from: configuration.yml
+```
+
+Use `tasks_from: attach_storage.yml` to prepare storage instead. Always select
+`tasks_from` explicitly; this role has no default `tasks/main.yml` entry point.
+The cluster playbook selects these files through its `storage` and `gitaly` stages.
 
 Each Gitaly host needs an explicit `gitaly_storage_name` in `host_vars`. That
 name must match the corresponding `storage` entry rendered by the Praefect
@@ -29,8 +48,8 @@ that this public CA file exists before configuring Gitaly. The TLS certificate
 role also installs this CA into Ubuntu's system trust store on both Gitaly
 and Praefect nodes. No interactive shell export is required.
 
-For existing nodes, run `playbooks/issue_internal_tls.yml` first if the system
-trust update has not been applied, then `playbooks/configure_gitaly.yml`.
+For existing nodes, run `playbooks/configure_cluster.yml --tags certificates` first if the system
+trust update has not been applied, then `playbooks/configure_cluster.yml --tags gitaly`.
 The configuration playbook processes one node at a time. Reconfiguration may
 restart Gitaly; serial execution alone does not guarantee uninterrupted traffic.
 After deployment, check `/opt/gitlab/etc/gitaly/env/SSL_CERT_FILE` on each node
@@ -52,6 +71,9 @@ secret must also be configured on the GitLab application server.
 Run after the data disks and TLS certificates are ready:
 
 ```bash
-ansible-playbook playbooks/configure_gitaly.yml --syntax-check --ask-vault-pass
-ansible-playbook playbooks/configure_gitaly.yml --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags gitaly --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags gitaly --ask-vault-pass
 ```
+
+Shared package installation lives in `roles/installation` and targets both
+Gitaly and Praefect through `playbooks/configure_cluster.yml --tags common,installation`.

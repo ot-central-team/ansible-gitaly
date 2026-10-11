@@ -1,9 +1,0 @@
----
-- name: Issue and distribute node certificates
-  hosts: gitaly:praefect
-  become: true
-  gather_facts: true
-  serial: 1
-  any_errors_fatal: true
-  roles:
-    - tls_certificates

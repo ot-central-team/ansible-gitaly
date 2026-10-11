@@ -1,9 +1,0 @@
----
-- name: Configure Praefect nodes without migrating the database
-  hosts: praefect
-  become: true
-  gather_facts: false
-  serial: 1
-  any_errors_fatal: true
-  roles:
-    - praefect

@@ -1,0 +1,7 @@
+---
+# The former tls_renewal role was an empty placeholder.
+- name: Report that automated TLS renewal is not implemented
+  ansible.builtin.fail:
+    msg: >-
+      TLS renewal is not implemented yet. A rolling renewal workflow with
+      service activation and health checks is required before using this entry point.

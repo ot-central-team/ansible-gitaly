@@ -3,3 +3,19 @@ gitaly_data_ebs_volume_id: ""
 gitaly_format_data_disk: false
 gitaly_data_filesystem: ext4
 gitaly_data_mountpoint: /var/opt/gitlab/git-data
+
+# Gitaly service configuration defaults.
+gitaly_config_path: /etc/gitlab/gitlab.rb
+gitaly_tls_listen_address: '0.0.0.0:9999'
+gitaly_tls_certificate_path: /etc/gitlab/ssl/server.crt
+gitaly_tls_privatekey_path: /etc/gitlab/ssl/server.key
+gitaly_ca_certificate_path: /etc/gitlab/trusted-certs/repo-data-internal-ca.crt
+gitaly_repository_mountpoint: /var/opt/gitlab/git-data
+gitaly_repository_path: /var/opt/gitlab/git-data/repositories
+gitaly_configure_gitlab_callbacks: true
+gitaly_internal_api_url: ''
+gitaly_reconfigure_on_change: true
+
+# Override these with vaulted/shared inventory values.
+praefect_internal_token: ''
+gitaly_gitlab_secret_token: ''

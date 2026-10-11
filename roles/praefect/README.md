@@ -15,8 +15,8 @@ The CA private key stays on the bastion.
 To apply this trust setup to existing nodes, run from the Ansible controller:
 
 ```bash
-ansible-playbook playbooks/issue_internal_tls.yml --ask-vault-pass
-ansible-playbook playbooks/configure_praefect.yml --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags certificates --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags praefect --ask-vault-pass
 ```
 
 The second playbook reconfigures Praefect when its configuration changes and
@@ -56,13 +56,13 @@ The role reads database connection settings from
 
 ## Run
 
-Configure Gitaly nodes first with `playbooks/configure_gitaly.yml`. Then issue
+Configure Gitaly nodes first with `playbooks/configure_cluster.yml --tags gitaly`. Then issue
 and install the Praefect node certificate and ensure the RDS CA bundle URL is
 reachable from each Praefect VM. Run:
 
 ```bash
-ansible-playbook playbooks/configure_praefect.yml --syntax-check --ask-vault-pass
-ansible-playbook playbooks/configure_praefect.yml --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags praefect --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags praefect --ask-vault-pass
 ```
 
 After the role succeeds, run the initial schema migration on **one** Praefect
