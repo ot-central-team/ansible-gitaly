@@ -1,2 +1,0 @@
----
-praefect_internal_token: "openssl rand -hex 32"

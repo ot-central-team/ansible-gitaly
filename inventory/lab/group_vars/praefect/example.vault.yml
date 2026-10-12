@@ -1,2 +1,0 @@
----
-praefect_external_token: "openssl rand -hex 32"
