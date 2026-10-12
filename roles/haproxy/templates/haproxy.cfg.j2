@@ -1,0 +1,31 @@
+# Managed by Ansible. TCP mode preserves Gitaly sidechannels.
+global
+    log /dev/log local0
+    user haproxy
+    group haproxy
+    daemon
+    ssl-default-bind-options ssl-min-ver TLSv1.2
+    ssl-default-server-options ssl-min-ver TLSv1.2
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    timeout connect 10s
+    timeout client 1h
+    timeout server 1h
+    timeout check 10s
+
+resolvers system_dns
+    parse-resolv-conf
+    hold valid 10s
+
+frontend praefect_frontend
+    bind :{{ haproxy_frontend_port }} ssl crt /etc/haproxy/certs/public.pem alpn h2
+    default_backend praefect_backend
+
+backend praefect_backend
+    balance leastconn
+{% for host in haproxy_backend_hosts %}
+    server praefect{{ loop.index }} {{ host }}:{{ haproxy_praefect_port }} ssl verify required ca-file /etc/haproxy/certs/internal-ca.crt verifyhost {{ host }} sni str({{ host }}) alpn h2 check check-sni {{ host }} check-alpn h2 inter 5s fall 3 rise 2 resolvers system_dns resolve-prefer ipv4 init-addr last,libc,none
+{% endfor %}

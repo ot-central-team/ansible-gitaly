@@ -25,7 +25,7 @@ TCP 5432. No AWS resources are provisioned by this playbook.
 Optional stage tags: `common`, `storage`, `installation`, `database`, `ca`,
 `certificates`, `gitaly`, `praefect`, `next_steps`. Selected stages assume their
 prerequisites are already complete. Avoid limiting a first full bootstrap to
-workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is only one cluster playbook.
+workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is one cluster playbook, plus a separate HAProxy setup playbook.
 
 Reconfiguration can restart services; serial execution is not a zero-downtime
 guarantee. HAProxy gets common preparation only; Rails, HAProxy service setup
@@ -55,6 +55,7 @@ inventory/
       bastion.yml         # bastion-only RDS administration settings (Vault)
 playbooks/
   configure_cluster.yml   # ordered setup; stage tags for individual operations
+  setup_haproxy.yml       # public TLS proxy on the bastion
 roles/
   common/                 # common OS prep and service-account prerequisites
   db/                     # create the Praefect RDS role and database from bastion
@@ -238,3 +239,13 @@ ansible-playbook playbooks/configure_cluster.yml --tags storage --ask-vault-pass
 Disk discovery is read-only, including in check mode. On fresh VMs check mode
 cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
 fresh-disk dry run is not supported.
+
+## HAProxy on the bastion
+
+Use `playbooks/setup_haproxy.yml` separately from cluster bootstrap. It configures
+TCP proxying with public TLS on 443 and verified internal TLS to Praefect on 3305.
+Set the public hostname, existing public certificate/key PEM path, and allowed
+client CIDRs in `inventory/lab/group_vars/bastion/vars.yml`.
+See [the HAProxy role guide](roles/haproxy/README.md) for certificate preparation,
+AWS rules, deployment, and tests. No public certificate or CA private key should
+be committed to the repository.

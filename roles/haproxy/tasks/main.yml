@@ -1,0 +1,178 @@
+---
+- name: Validate HAProxy topology and inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - inventory_hostname in groups.get('bastion', [])
+      - haproxy_public_hostname is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+      - haproxy_backend_hosts | length > 0
+      - haproxy_allowed_client_sources | length > 0
+      - haproxy_frontend_port | int > 0
+      - haproxy_frontend_port | int <= 65535
+      - haproxy_praefect_port | int > 0
+      - haproxy_praefect_port | int <= 65535
+    fail_msg: Set the public hostname, certificate paths and allowed client CIDRs in bastion vars; configure at least one Praefect node.
+
+- name: Validate backend DNS names
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+    fail_msg: HAProxy backend hosts must be DNS names covered by their Praefect certificates.
+  loop: "{{ haproxy_backend_hosts }}"
+
+- name: Require existing public PEM and private CA certificate on the bastion
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ haproxy_public_pem_source }}"
+    - "{{ haproxy_internal_ca_source }}"
+  register: haproxy_source_files
+
+- name: Stop if certificate inputs are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+    fail_msg: Place the public full-chain/private-key PEM on the bastion and complete internal CA setup first.
+  loop: "{{ haproxy_source_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Install HAProxy and TLS/firewall tools
+  ansible.builtin.apt:
+    name:
+      - haproxy
+      - openssl
+      - ca-certificates
+      - ufw
+    state: present
+    update_cache: true
+
+- name: Verify public certificate covers the configured hostname
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ haproxy_public_pem_source }}"
+      - -noout
+      - -checkhost
+      - "{{ haproxy_public_hostname }}"
+  register: haproxy_hostname_check
+  changed_when: false
+  failed_when: haproxy_hostname_check.rc != 0 or 'does match certificate' not in haproxy_hostname_check.stdout
+
+- name: Refuse an expired public certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ haproxy_public_pem_source }}"
+      - -noout
+      - -checkend
+      - '0'
+  changed_when: false
+
+- name: Verify backend reachability, CA trust and DNS identity before deployment
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - '15'
+      - openssl
+      - s_client
+      - -connect
+      - "{{ item }}:{{ haproxy_praefect_port }}"
+      - -servername
+      - "{{ item }}"
+      - -verify_hostname
+      - "{{ item }}"
+      - -CAfile
+      - "{{ haproxy_internal_ca_source }}"
+      - -verify_return_error
+      - -alpn
+      - h2
+      - -brief
+    stdin: ''
+    stdin_add_newline: false
+  loop: "{{ haproxy_backend_hosts }}"
+  changed_when: false
+
+- name: Create restricted HAProxy certificate directory
+  ansible.builtin.file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the existing public certificate and key PEM
+  ansible.builtin.copy:
+    src: "{{ haproxy_public_pem_source }}"
+    dest: /etc/haproxy/certs/public.pem
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Reload HAProxy
+
+- name: Install only the public internal CA for backend verification
+  ansible.builtin.copy:
+    src: "{{ haproxy_internal_ca_source }}"
+    dest: /etc/haproxy/certs/internal-ca.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload HAProxy
+
+- name: Validate and install HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/sbin/haproxy -c -f %s
+  notify: Reload HAProxy
+
+- name: Validate configuration even when only certificates changed
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/haproxy
+      - -c
+      - -f
+      - /etc/haproxy/haproxy.cfg
+  changed_when: false
+
+- name: Add approved client allowances without changing bastion SSH or firewall policy
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    src: "{{ item }}"
+    port: "{{ haproxy_frontend_port }}"
+  loop: "{{ haproxy_allowed_client_sources }}"
+
+- name: Start HAProxy and enable it at boot
+  ansible.builtin.systemd_service:
+    name: haproxy
+    state: started
+    enabled: true
+
+- name: Apply validated changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Check HAProxy listener is available locally
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ haproxy_frontend_port }}"
+    timeout: 15
+
+- name: Report the application endpoint
+  ansible.builtin.debug:
+    msg: >-
+      HAProxy listens at tls://{{ haproxy_public_hostname }}:{{ haproxy_frontend_port }}.
+      Configure public DNS and AWS security-group access separately. Application clients
+      use praefect_external_token. Listener and TLS checks are not repository-operation tests.
