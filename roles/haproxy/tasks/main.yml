@@ -79,22 +79,24 @@
     argv:
       - timeout
       - '15'
-      - openssl
-      - s_client
-      - -connect
-      - "{{ item }}:{{ haproxy_praefect_port }}"
-      - -servername
+      - /usr/bin/python3
+      - -c
+      - |
+        import socket
+        import ssl
+        import sys
+
+        host, port, ca_file = sys.argv[1:]
+        context = ssl.create_default_context(cafile=ca_file)
+        context.set_alpn_protocols(['h2'])
+        with socket.create_connection((host, int(port)), timeout=10) as connection:
+            with context.wrap_socket(connection, server_hostname=host) as tls:
+                if tls.selected_alpn_protocol() != 'h2':
+                    raise RuntimeError('Backend did not negotiate ALPN h2')
+                print(f'{host}:{port}: CA trust, hostname and ALPN h2 verified')
       - "{{ item }}"
-      - -verify_hostname
-      - "{{ item }}"
-      - -CAfile
+      - "{{ haproxy_praefect_port | string }}"
       - "{{ haproxy_internal_ca_source }}"
-      - -verify_return_error
-      - -alpn
-      - h2
-      - -brief
-    stdin: ''
-    stdin_add_newline: false
   loop: "{{ haproxy_backend_hosts }}"
   changed_when: false
 
