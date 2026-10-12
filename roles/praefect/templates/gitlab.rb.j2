@@ -16,7 +16,7 @@ gitlab_rails['auto_migrate'] = false
 praefect['enable'] = true
 praefect['auto_migrate'] = false
 
-# Persist outgoing Gitaly CA trust in the managed service environment.
+# Persist combined public and internal CA trust in the service environment.
 # Keep GitLab's other default environment settings.
 praefect['env']['SSL_CERT_FILE'] = {{ praefect_gitaly_ca_certificate_path | to_json }}
 

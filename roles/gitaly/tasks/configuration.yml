@@ -45,6 +45,16 @@
       - gitaly_tls_files.results | map(attribute='stat.exists') | min
     fail_msg: Run the TLS certificate playbook for this Gitaly host first.
 
+- name: Verify the trust bundle accepts this node's internal certificate
+  ansible.builtin.command:
+    argv:
+      - /opt/gitlab/embedded/bin/openssl
+      - verify
+      - -CAfile
+      - "{{ gitaly_ca_certificate_path }}"
+      - "{{ gitaly_tls_certificate_path }}"
+  changed_when: false
+
 - name: Install the Gitaly GitLab configuration
   ansible.builtin.template:
     src: gitlab.rb.j2

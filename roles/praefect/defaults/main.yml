@@ -2,7 +2,8 @@
 praefect_config_path: /etc/gitlab/gitlab.rb
 praefect_tls_listen_address: '0.0.0.0:3305'
 praefect_tls_certificate_path: /etc/gitlab/ssl/server.crt
-praefect_gitaly_ca_certificate_path: /etc/gitlab/trusted-certs/repo-data-internal-ca.crt
+# System bundle includes public CAs and our internal CA installed by the TLS role.
+praefect_gitaly_ca_certificate_path: /etc/ssl/certs/ca-certificates.crt
 praefect_tls_privatekey_path: /etc/gitlab/ssl/server.key
 praefect_rds_ca_bundle_url: https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 praefect_rds_ca_bundle_path: /etc/gitlab/ssl/rds-global-bundle.pem

@@ -43,8 +43,8 @@ It disables Rails migrations on the storage nodes.
 
 Outgoing TLS connections use the persistent service setting
 `gitaly['env']['SSL_CERT_FILE']`, pointing to `gitaly_ca_certificate_path`
-(default `/etc/gitlab/trusted-certs/repo-data-internal-ca.crt`). The role checks
-that this public CA file exists before configuring Gitaly. The TLS certificate
+(default `/etc/ssl/certs/ca-certificates.crt`). The role checks
+that this bundle exists and verifies the node certificate against it before configuring Gitaly. The TLS certificate
 role also installs this CA into Ubuntu's system trust store on both Gitaly
 and Praefect nodes. No interactive shell export is required.
 
@@ -112,3 +112,9 @@ ansible-playbook playbooks/configure_cluster.yml --tags storage --ask-vault-pass
 Disk discovery is read-only, including in check mode. On fresh VMs check mode
 cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
 fresh-disk dry run is not supported.
+
+The original internal CA remains in `/etc/gitlab/trusted-certs` and
+`/usr/local/share/ca-certificates`. The TLS role runs `update-ca-certificates`
+to include it in the system bundle. Do not move or overwrite the system bundle
+with a single CA certificate. Rerun the `certificates` stage before service
+configuration if system trust has not yet been installed.

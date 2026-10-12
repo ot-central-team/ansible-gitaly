@@ -9,7 +9,10 @@ Set `praefect_refresh_rds_ca_bundle=true` for a planned CA bundle refresh.
 The TLS certificate role installs the public internal CA into Ubuntu's system
 trust store and runs `update-ca-certificates` when it changes. This lets manual
 checks use system trust without shell exports. Praefect also gets a persistent
-`SSL_CERT_FILE` service setting pointing to `praefect_gitaly_ca_certificate_path`.
+`SSL_CERT_FILE` service setting pointing to `praefect_gitaly_ca_certificate_path`
+(default `/etc/ssl/certs/ca-certificates.crt`). The role verifies the internal
+node certificate against this combined public/internal CA bundle before applying
+configuration.
 The CA private key stays on the bastion.
 
 To apply this trust setup to existing nodes, run from the Ansible controller:
@@ -83,3 +86,9 @@ sudo -u git -- /opt/gitlab/embedded/bin/praefect \
 Do not run `sql-migrate` on every Praefect node. For GitLab/Praefect upgrades,
 follow the upgrade procedure for the installed GitLab version and continue to
 run migrations on only the designated deployment node.
+
+The original internal CA remains in `/etc/gitlab/trusted-certs` and
+`/usr/local/share/ca-certificates`. The TLS role runs `update-ca-certificates`
+to include it in the system bundle. Do not move or overwrite the system bundle
+with a single CA certificate. Rerun the `certificates` stage before service
+configuration if system trust has not yet been installed.
