@@ -1,5 +1,5 @@
 ---
-haproxy_public_hostname: ''
+haproxy_public_hostname: 'haproxy.tyagi.fun'
 # Existing combined PEM (public full chain + matching private key) ON THE BASTION.
 haproxy_public_pem_source: /etc/ansible/pki/haproxy/public.pem
 haproxy_internal_ca_source: "{{ tls_ca_certificate_path }}"
