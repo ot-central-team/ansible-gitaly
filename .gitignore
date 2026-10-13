@@ -12,3 +12,6 @@ certs/
 # Ansible/runtime artifacts
 *.retry
 __pycache__/
+
+# Local EKS settings, credentials, downloaded charts, and rendered Secrets
+/eks/local/

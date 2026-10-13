@@ -1,5 +1,15 @@
 # Gitaly lab — Ansible starter layout
 
+For the GitLab application on EKS, follow [setup.md](setup.md). The deployment
+templates are in [eks/](eks/), using `gitlab.opstree.dev` for the application
+and the existing `haproxy.tyagi.fun:443` repository endpoint. The EKS guide
+covers Rails RDS, ElastiCache, S3, ALB, application workloads, Runner and recovery.
+The VM-side Ansible workflow is documented below.
+
+For a beginner-friendly explanation and hands-on pod-to-S3 exercise, use
+[OIDC-IRSA-LAB.md](OIDC-IRSA-LAB.md). It also explains how IAM differs from
+Kubernetes Roles/RoleBindings and developer access to EKS.
+
 ## Configure the cluster in order
 
 Run the complete bootstrap from the Ansible controller:
