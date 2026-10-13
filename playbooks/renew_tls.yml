@@ -1,0 +1,14 @@
+---
+- name: Renew existing private-CA server certificates one node at a time
+  hosts: praefect:gitaly
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  environment:
+    AWS_PAGER: ""
+  tasks:
+    - name: Run explicit TLS renewal
+      ansible.builtin.import_role:
+        name: tls
+        tasks_from: renewal_tls.yml

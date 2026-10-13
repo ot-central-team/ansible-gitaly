@@ -87,6 +87,8 @@ and `tasks_from: ca_generation.yml` or `tasks_from: distribution_tls.yml`.
 CA generation runs on the bastion; distribution runs on Gitaly/Praefect and
 delegates signing to the bastion. There is no default `tasks/main.yml`.
 
-`tasks/renewal_tls.yml` is an explicit not-implemented entry point migrated
-from the empty renewal role. It fails with an explanation and performs no
-renewal or service restart. No renewal timer is installed.
+`tasks/renewal_tls.yml` provides explicit leaf renewal with preserved private
+keys, staged validation, rollback and optional Praefect NLB draining. See
+[RENEWAL.md](RENEWAL.md) for the first NLB SAN update, manual commands and the
+optional daily timer that renews certificates at 30 days old. CA rotation is
+not included. No timer is installed by cluster bootstrap.

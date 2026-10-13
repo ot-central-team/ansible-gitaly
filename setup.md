@@ -628,7 +628,8 @@ backups and certificate expiry. The bundled Prometheus is disabled to avoid
 creating an unconfigured monitoring stack; **production needs external monitoring**.
 Test SES delivery and password-reset email before onboarding users.
 
-Your Ansible TLS renewal task is still a placeholder. Establish and test a
+The [TLS renewal workflow](roles/tls/RENEWAL.md) handles private-CA leaf
+certificates. Establish and test a
 renewal workflow and expiry alerts for the private CA/leaves and public Praefect
 certificate before production. Existing certificates surviving re-runs is not
 automatic renewal. ACM renews its DNS-validated ALB certificate only while its

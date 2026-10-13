@@ -24,3 +24,18 @@ tls_trusted_certificates_directory: /etc/gitlab/trusted-certs
 # Add service aliases here when clients connect through a load-balancer DNS
 # name. The inventory hostname is always included automatically.
 tls_extra_dns_names: []
+
+# Renewal age and expiry buffer share this interval (normal bootstrap never renews).
+tls_renew_interval_days: 30
+tls_renew_force: false
+# For a planned maintenance window only; otherwise Praefect drains through NLB.
+tls_renew_maintenance_window: false
+# Live Praefect renewal: target-group ARN, plus each node's ID in host_vars.
+# Region is derived from the ARN; the target port is the service port (3305).
+tls_renew_nlb_target_group_arn: ''
+tls_renew_nlb_target_id: ''
+
+# Optional controller timer. Repository and Ansible paths are derived automatically.
+# The timer targets Praefect only; keep the Vault password file outside Git.
+tls_renew_schedule_user: ubuntu
+tls_renew_schedule_vault_password_file: ''

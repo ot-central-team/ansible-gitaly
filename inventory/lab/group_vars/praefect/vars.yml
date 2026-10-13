@@ -3,3 +3,8 @@ common_service_ports:
   - 3305
 
 praefect_default_replication_factor: 2
+
+# Shared TLS identity used by clients through the TCP passthrough NLB.
+# Existing certificates require explicit reissuance; bootstrap preserves them.
+tls_extra_dns_names:
+  - loadbalancer-e2f43192ead7f879.elb.ap-south-1.amazonaws.com

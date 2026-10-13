@@ -70,7 +70,7 @@ roles/
   installation/           # shared GitLab package installation
   gitaly/                 # Gitaly storage and service configuration
   praefect/               # Praefect config, RDS CA, migrations/health checks
-  tls/                    # CA generation, certificate distribution; renewal placeholder
+  tls/                    # CA generation, certificate distribution; explicit renewal
 ```
 
 Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml` (overridable safe defaults), `templates/` (Jinja2 config templates), and optionally `handlers/main.yml` (restart/reload only when configuration changes). `files/` is for static assets. Add role subfolders only when there is a real need; do not create one role per server.
@@ -81,7 +81,7 @@ Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml
 - `installation`: shared GitLab package installation on both Gitaly and Praefect.
 - `gitaly`: independently selected data disk preparation and service configuration, targeting only Gitaly.
 - `praefect`: service configuration on the three Praefect nodes. Database creation/migration must be guarded and run once, not independently on every node.
-- `tls`: separate task files for CA generation on the bastion and certificate issuance/distribution to workload hosts. CA signing stays on the bastion. Renewal remains a placeholder.
+- `tls`: separate task files for CA generation on the bastion and certificate issuance/distribution to workload hosts. CA signing stays on the bastion. Renewal is a separate explicit workflow.
 
 TLS renewal should be a separate, deliberate playbook/workflow, not part of every normal deployment run. Praefect renewal needs a drain/verify/ready sequence via NLB target draining; Gitaly renewal needs one node at a time and replica health checks. Ansible can automate those steps, but a service restart may still interrupt active RPCs; do not promise zero downtime.
 
@@ -250,3 +250,9 @@ fresh-disk dry run is not supported.
 Follow [NLB-SETUP.md](NLB-SETUP.md) to configure `nlb.tyagi.fun:443`, install your
 public certificate on Praefect, configure DNS and test TLS/gRPC through NLB.
 AWS NLB resources are configured separately from the cluster playbook.
+
+## Certificate renewal
+
+See [TLS renewal](roles/tls/RENEWAL.md) for `playbooks/renew_tls.yml`, adding the
+NLB name without changing keys, and the optional 30-day Praefect renewal schedule.
+Bootstrap never renews existing certificates.
