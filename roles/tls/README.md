@@ -55,8 +55,8 @@ The inventory hostname is placed in each certificate's Subject Alternative
 Name. For Praefect, add the DNS name clients actually use (for example, the
 Praefect load-balancer name) to `tls_extra_dns_names` in
 `inventory/lab/group_vars/praefect/vars.yml` before issuing certificates. The
-current `[haproxy]` group is empty, so this playbook does not configure or issue
-a frontend certificate for HAProxy.
+public-certificate NLB workflow instead uses separate Praefect certificate paths;
+see [NLB setup](../../NLB-SETUP.md). Do not overwrite bootstrap certificates.
 
 Inspect a node certificate after the playbook completes:
 

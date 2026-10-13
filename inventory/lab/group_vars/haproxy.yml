@@ -1,4 +1,0 @@
----
-# Internal access only; add approved public client rules before using public ingress.
-common_service_ports:
-  - 443

@@ -2,7 +2,7 @@
 
 For the GitLab application on EKS, follow [setup.md](setup.md). The deployment
 templates are in [eks/](eks/), using `gitlab.opstree.dev` for the application
-and the existing `haproxy.tyagi.fun:443` repository endpoint. The EKS guide
+and the existing `nlb.tyagi.fun:443` repository endpoint. The EKS guide
 covers Rails RDS, ElastiCache, S3, ALB, application workloads, Runner and recovery.
 The VM-side Ansible workflow is documented below.
 
@@ -35,20 +35,20 @@ TCP 5432. No AWS resources are provisioned by this playbook.
 Optional stage tags: `common`, `storage`, `installation`, `database`, `ca`,
 `certificates`, `gitaly`, `praefect`, `next_steps`. Selected stages assume their
 prerequisites are already complete. Avoid limiting a first full bootstrap to
-workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is one cluster playbook, plus a separate HAProxy setup playbook.
+workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is one cluster playbook, with separate [NLB setup instructions](NLB-SETUP.md).
 
 Reconfiguration can restart services; serial execution is not a zero-downtime
-guarantee. HAProxy gets common preparation only; Rails, HAProxy service setup
+guarantee. Rails, NLB provisioning
 and automatic TLS renewal are not part of this bootstrap.
 
 
-`playbooks/configure_cluster.yml --tags common,installation` first runs the `common` role on Gitaly, Praefect, and HAProxy, then installs the pinned GitLab package on Gitaly and Praefect only. AWS networking, EC2, DNS, and RDS instance creation remain separate.
+`playbooks/configure_cluster.yml --tags common,installation` first runs the `common` role on Gitaly and Praefect, then installs the pinned GitLab package on Gitaly and Praefect only. AWS networking, EC2, DNS, and RDS instance creation remain separate.
 
 ## What Ansible is
 
 Ansible is an automation tool that connects from a **control node** (your laptop or admin machine) to target Linux hosts, usually over SSH. It runs declarative tasks: describe the desired state (for example, a package installed or a config file present), and Ansible applies changes. A **playbook** says which hosts to act on and which **roles** to apply. An **inventory** identifies hosts and groups them. Variables hold environment-specific settings. Roles organize reusable tasks, templates, files, and defaults by responsibility.
 
-For this lab, inventory groups are `gitaly`, `praefect`, and `haproxy`. They are not separate roles per VM: three Gitaly servers share the `gitaly` role, with node-specific values such as storage name supplied by inventory variables.
+For this lab, inventory groups are `gitaly`, `praefect`, and `bastion`. They are not separate roles per VM: three Gitaly servers share the `gitaly` role, with node-specific values such as storage name supplied by inventory variables.
 
 ## Suggested layout
 
@@ -61,18 +61,15 @@ inventory/
       all.yml             # shared, non-secret configuration
       gitaly.yml          # Gitaly-specific settings (to add)
       praefect.yml        # Praefect/RDS settings (to add)
-      haproxy.yml         # proxy backend settings (to add)
       bastion.yml         # bastion-only RDS administration settings (Vault)
 playbooks/
   configure_cluster.yml   # ordered setup; stage tags for individual operations
-  setup_haproxy.yml       # public TLS proxy on the bastion
 roles/
   common/                 # common OS prep and service-account prerequisites
   db/                     # create the Praefect RDS role and database from bastion
   installation/           # shared GitLab package installation
   gitaly/                 # Gitaly storage and service configuration
   praefect/               # Praefect config, RDS CA, migrations/health checks
-  haproxy/                # TCP passthrough config and runtime checks
   tls/                    # CA generation, certificate distribution; renewal placeholder
 ```
 
@@ -84,10 +81,9 @@ Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml
 - `installation`: shared GitLab package installation on both Gitaly and Praefect.
 - `gitaly`: independently selected data disk preparation and service configuration, targeting only Gitaly.
 - `praefect`: service configuration on the three Praefect nodes. Database creation/migration must be guarded and run once, not independently on every node.
-- `haproxy`: TCP passthrough config on the dedicated proxy only.
 - `tls`: separate task files for CA generation on the bastion and certificate issuance/distribution to workload hosts. CA signing stays on the bastion. Renewal remains a placeholder.
 
-TLS renewal should be a separate, deliberate playbook/workflow, not part of every normal deployment run. Praefect renewal needs a drain/verify/ready sequence via HAProxy; Gitaly renewal needs one node at a time and replica health checks. Ansible can automate those steps, but a service restart may still interrupt active RPCs; do not promise zero downtime.
+TLS renewal should be a separate, deliberate playbook/workflow, not part of every normal deployment run. Praefect renewal needs a drain/verify/ready sequence via NLB target draining; Gitaly renewal needs one node at a time and replica health checks. Ansible can automate those steps, but a service restart may still interrupt active RPCs; do not promise zero downtime.
 
 ## First manual-lab workflow
 
@@ -118,11 +114,11 @@ For example, with **sample addresses only**:
 [praefect]
 172.31.39.203
 
-[haproxy]
+[bastion]
 172.31.39.204
 ```
 
-The group names match `group_vars/gitaly.yml`, `group_vars/praefect.yml`, and `group_vars/haproxy.yml`. Ansible loads the matching file for each IP; `group_vars/all.yml` applies to every IP. To target one VM with `--limit`, give its inventory IP.
+The group names match `group_vars/gitaly.yml`, `group_vars/praefect.yml`, and `group_vars/bastion/vars.yml`. Ansible loads the matching file for each IP; `group_vars/all.yml` applies to every IP. To target one VM with `--limit`, give its inventory IP.
 
 The firewall settings are in `inventory/lab/group_vars/`:
 
@@ -132,7 +128,6 @@ The firewall settings are in `inventory/lab/group_vars/`:
 | SSH sources | `all.yml` | `ssh_sources`, initially the same subnet |
 | Gitaly TCP port | `gitaly.yml` | `common_service_ports: [9999]` |
 | Praefect TCP port | `praefect.yml` | `common_service_ports: [3305]` |
-| HAProxy internal TCP port | `haproxy.yml` | `common_service_ports: [443]` |
 
 `172.31.39.202/20` is a host address with a prefix; its network is `172.31.32.0/20`, covering `172.31.32.0` through `172.31.47.255`. CIDR `/20` describes the network size, not a port. Confirm all intended nodes are in this range.
 
@@ -167,13 +162,13 @@ Keep your SSH session open and verify a new connection after the first run. Then
 ```bash
 ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly --private-key ~/.ssh/lab-key.pem
 ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit praefect --private-key ~/.ssh/lab-key.pem
-# All inventoried Gitaly, Praefect and HAProxy hosts:
+# All inventoried Gitaly and Praefect hosts:
 ansible-playbook playbooks/configure_cluster.yml --tags common,installation --private-key ~/.ssh/lab-key.pem
 ```
 
 Add `--ask-become-pass` if your SSH user requires a sudo password. Hosts are processed one at a time. SSH and service allow rules are installed before default deny and UFW activation. The role refreshes apt metadata but does not upgrade all packages.
 
-Re-running keeps the requested rules present without duplicating them. Existing UFW rules are preserved: changing a source or port adds the new allowance but does not remove the old one. Review `sudo ufw status numbered` and remove obsolete allowances deliberately. HAProxy currently permits internal port 443 only; approved public client access must be configured separately.
+Re-running keeps the requested rules present without duplicating them. Existing UFW rules are preserved: changing a source or port adds the new allowance but does not remove the old one. Review `sudo ufw status numbered` and remove obsolete allowances deliberately. NLB access is configured separately in AWS.
 
 `--check --diff` is useful after UFW is installed. On a fresh VM, check mode cannot actually install UFW, so subsequent UFW tasks may fail because its executable is absent.
 
@@ -250,12 +245,8 @@ Disk discovery is read-only, including in check mode. On fresh VMs check mode
 cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
 fresh-disk dry run is not supported.
 
-## HAProxy on the bastion
+## Internal NLB endpoint
 
-Use `playbooks/setup_haproxy.yml` separately from cluster bootstrap. It configures
-TCP proxying with public TLS on 443 and verified internal TLS to Praefect on 3305.
-Set the public hostname, existing public certificate/key PEM path, and allowed
-client CIDRs in `inventory/lab/group_vars/bastion/vars.yml`.
-See [the HAProxy role guide](roles/haproxy/README.md) for certificate preparation,
-AWS rules, deployment, and tests. No public certificate or CA private key should
-be committed to the repository.
+Follow [NLB-SETUP.md](NLB-SETUP.md) to configure `nlb.tyagi.fun:443`, install your
+public certificate on Praefect, configure DNS and test TLS/gRPC through NLB.
+AWS NLB resources are configured separately from the cluster playbook.

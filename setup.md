@@ -1,7 +1,7 @@
 # GitLab on EKS — setup handbook
 
 This deploys the application half of your GitLab installation. It reuses the
-existing Gitaly → Praefect → HAProxy setup. Run the steps in order from a trusted
+existing Gitaly → Praefect → NLB setup. Run the steps in order from a trusted
 admin machine with access to EKS and AWS; run the database step from the bastion.
 These files do not create cloud resources until you execute the commands.
 
@@ -16,7 +16,7 @@ Toolbox / migration jobs ──────────────────�
                                                   ├→ Rails RDS PostgreSQL
                                                   ├→ ElastiCache Redis
                                                   ├→ S3 via IAM roles
-                                                  └→ haproxy.tyagi.fun:443
+                                                  └→ nlb.tyagi.fun:443
                                                       → Praefect:3305
                                                         → Gitaly nodes:9999
 Gitaly hooks → https://gitlab.opstree.dev/api/v4/internal/...
@@ -67,8 +67,7 @@ Use separate CI nodes labelled `workload=gitlab-ci` and tainted
 `workload=gitlab-ci:NoSchedule`. Size CI nodes for build CPU/memory and job count.
 Untrusted CI should use a separate cluster before wider multi-tenant use.
 
-**The existing single Praefect and single HAProxy/bastion remain single points
-of failure.** Two small Gitaly VMs are not a validated production backend for
+**NLB does not make a single Praefect node highly available.** Two small Gitaly VMs are not a validated production backend for
 this load. Before production, review the supported three-Gitaly/three-Praefect
 topology across AZs, a redundant supported TCP load-balancing endpoint, and HA
 for the Praefect database. Repository replicas do not replace backups.
@@ -158,21 +157,21 @@ Allow only required traffic in security groups and host firewalls:
 | ALB security group | Webservice pod/node security group | 8181 |
 | Application pods + bastion | Rails RDS | 5432 |
 | Application pods | Redis primary/replicas | 6379 |
-| Application pods | HAProxy endpoint | 443 |
-| HAProxy | Praefect | 3305 |
+| Application pods | NLB endpoint | 443 |
+| NLB | Praefect | 3305 |
 | Praefect and Gitaly peers | Gitaly | 9999 |
 | Praefect | Existing Praefect RDS | 5432 |
 | Application/CI nodes | DNS, image registries, S3, regional STS, SMTP | DNS 53; HTTPS 443; SMTP 587 as needed |
 
 Use the **actual pod source security group/IP path**, accounting for VPC CNI,
 NAT, custom networking and any security groups for pods. Private DNS/routing to
-`haproxy.tyagi.fun` may point to the bastion's private IP while keeping the
-hostname and certificate unchanged. Public DNS is also usable if the NAT
-egress IP is permitted. Do not expose 3305 or 9999 publicly. Existing ALB
-controller permissions must allow target registration and backend SG updates.
+`nlb.tyagi.fun` must resolve through a CNAME to the internal NLB DNS name.
+EKS must have private network access to that VPC; public DNS does not provide
+an internet route. Do not expose 3305 or 9999 publicly. Existing ALB controller
+permissions must allow target registration and backend SG updates.
 
 This baseline terminates TLS at ALB and uses HTTP to Workhorse inside the
-private VPC. RDS, Redis and HAProxy connections use TLS. If your policy requires
+private VPC. RDS, Redis and NLB connections use TLS. If your policy requires
 TLS on the ALB-to-pod leg, configure Workhorse backend TLS before launch; do not
 describe this baseline as end-to-end encrypted.
 
@@ -400,11 +399,12 @@ PY
 kubectl -n gitlab create secret generic aws-rds-ca --from-file=eks/local/rds-ca
 ```
 
-The chart adds these CAs to its normal public trust bundle. HAProxy presents a
-**publicly trusted certificate for `haproxy.tyagi.fun`**, so EKS does not need
-your private internal CA. HAProxy itself continues to trust the private CA for
-Praefect. No CA private key or HAProxy private key belongs in EKS. Public ALB
-TLS uses ACM, so no Kubernetes ingress TLS Secret is needed.
+The chart adds these CAs to its normal public trust bundle. Follow
+[NLB-SETUP.md](NLB-SETUP.md) first: NLB passes TCP through to Praefect, which
+presents your publicly trusted certificate for `nlb.tyagi.fun`. EKS therefore
+does not need the private internal CA for this endpoint. Praefect still trusts
+the private CA when connecting to Gitaly. No TLS private keys belong in EKS.
+Public ALB TLS uses ACM, so no Kubernetes ingress TLS Secret is needed.
 
 Store durable copies of these secrets encrypted outside the cluster. Enable
 appropriate EKS secret encryption and restrict Secret read/RBAC access. Do not
@@ -497,7 +497,7 @@ ansible-playbook playbooks/configure_cluster.yml --tags gitaly --ask-vault-pass
 Gitaly must resolve and reach this domain and trust its public certificate.
 Do not append the domain to the private CA or regenerate certificates. This
 reconfiguration can restart Gitaly; do it before admitting users. The existing
-HAProxy endpoint remains the repository RPC endpoint; the ALB is the web/API
+NLB endpoint remains the repository RPC endpoint; the ALB is the web/API
 endpoint. They are different services.
 
 ## 11. Verify application and repository operations
@@ -505,8 +505,8 @@ endpoint. They are different services.
 From the admin machine, test public TLS to the repository proxy:
 
 ```bash
-openssl s_client -connect haproxy.tyagi.fun:443 \
-  -servername haproxy.tyagi.fun -verify_hostname haproxy.tyagi.fun \
+openssl s_client -connect nlb.tyagi.fun:443 \
+  -servername nlb.tyagi.fun -verify_hostname nlb.tyagi.fun \
   -verify_return_error -alpn h2 -brief </dev/null
 ```
 
@@ -612,7 +612,7 @@ Back up the following independently, encrypted with access controls:
 - RDS automated snapshots/PITR for **both** Rails and Praefect databases.
 - GitLab application/repository backups and S3 objects; versioning is additional
   protection, not a tested restore plan.
-- Bastion private CA key/passphrase and certificate material, and HAProxy TLS
+- Bastion private CA key/passphrase and certificate material, and public Praefect TLS
   credentials. Never copy CA private keys into the repository or job pods.
 
 Agree an RPO/RTO and practice a full restore, including Praefect metadata. Do
@@ -629,7 +629,7 @@ creating an unconfigured monitoring stack; **production needs external monitorin
 Test SES delivery and password-reset email before onboarding users.
 
 Your Ansible TLS renewal task is still a placeholder. Establish and test a
-renewal workflow and expiry alerts for the private CA/leaves and HAProxy public
+renewal workflow and expiry alerts for the private CA/leaves and public Praefect
 certificate before production. Existing certificates surviving re-runs is not
 automatic renewal. ACM renews its DNS-validated ALB certificate only while its
 validation records and renewal requirements remain satisfied.

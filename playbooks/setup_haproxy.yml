@@ -1,9 +1,0 @@
----
-- name: Configure the bastion as the Praefect TLS proxy
-  hosts: bastion
-  gather_facts: true
-  become: true
-  serial: 1
-  any_errors_fatal: true
-  roles:
-    - haproxy

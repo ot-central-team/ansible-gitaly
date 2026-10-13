@@ -3,12 +3,3 @@ praefect_db_port: 5432
 praefect_db_name: praefect_production
 praefect_db_user: praefect
 praefect_db_master_user: postgres
-
-# HAProxy runs on this bastion through playbooks/setup_haproxy.yml only.
-# Set the real public DNS name covered by your existing public certificate.
-haproxy_public_hostname: 'haproxy.tyagi.fun'
-# Combined fullchain + matching private key, already placed ON THE BASTION.
-haproxy_public_pem_source: /etc/ansible/pki/haproxy/public.pem
-# Private clients work initially; add approved public client egress CIDRs here.
-haproxy_allowed_client_sources:
-  - "{{ cluster_cidr }}"

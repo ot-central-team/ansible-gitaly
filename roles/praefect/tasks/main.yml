@@ -45,13 +45,15 @@
     force: "{{ praefect_refresh_rds_ca_bundle | bool }}"
     validate_certs: true
 
-- name: Verify the trust bundle accepts this node's internal certificate
+- name: Verify the trust bundle accepts this node's certificate and supplied chain
   ansible.builtin.command:
     argv:
       - /opt/gitlab/embedded/bin/openssl
       - verify
       - -CAfile
       - "{{ praefect_gitaly_ca_certificate_path }}"
+      - -untrusted
+      - "{{ praefect_tls_certificate_path }}"
       - "{{ praefect_tls_certificate_path }}"
   changed_when: false
 

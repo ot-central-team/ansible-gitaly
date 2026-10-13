@@ -12,6 +12,6 @@ Existing `gitlab_package_*` variables and `gitlab_ee_version` are unchanged.
 ansible-playbook playbooks/configure_cluster.yml --tags installation --ask-vault-pass
 ```
 
-The playbook runs OS/firewall preparation first, including HAProxy, then this
+The playbook runs OS/firewall preparation on Gitaly and Praefect first, then this
 role only on Gitaly and Praefect. Use `--tags installation` to select only
 package installation, or `--tags common` for OS/firewall preparation only.

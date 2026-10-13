@@ -1,6 +1,6 @@
 ---
 - name: 1. Prepare VM packages and firewall
-  hosts: gitaly:praefect:haproxy
+  hosts: gitaly:praefect
   become: true
   serial: 1
   any_errors_fatal: true

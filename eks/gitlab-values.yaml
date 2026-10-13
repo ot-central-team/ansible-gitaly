@@ -31,7 +31,7 @@ global:
     enabled: false
     external:
       - name: default
-        hostname: haproxy.tyagi.fun
+        hostname: nlb.tyagi.fun
         port: 443
         tlsEnabled: true
     authToken:
