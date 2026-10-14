@@ -1,258 +1,151 @@
-# Gitaly lab — Ansible starter layout
+# Gitaly and Praefect with Ansible
 
-For the GitLab application on EKS, follow [setup.md](setup.md). The deployment
-templates are in [eks/](eks/), using `gitlab.opstree.dev` for the application
-and the existing `nlb.tyagi.fun:443` repository endpoint. The EKS guide
-covers Rails RDS, ElastiCache, S3, ALB, application workloads, Runner and recovery.
-The VM-side Ansible workflow is documented below.
+Configure existing Ubuntu VMs for Gitaly repository storage, Praefect routing,
+PostgreSQL database access and private-CA TLS. This repository does not create
+EC2 instances, attach EBS volumes in AWS, or provision RDS, DNS or load balancers.
 
-For a beginner-friendly explanation and hands-on pod-to-S3 exercise, use
-[OIDC-IRSA-LAB.md](OIDC-IRSA-LAB.md). It also explains how IAM differs from
-Kubernetes Roles/RoleBindings and developer access to EKS.
+## What runs where
 
-## Configure the cluster in order
+| Host | Purpose |
+|---|---|
+| Ansible controller | Runs playbooks and connects to VMs over SSH. It can be the bastion. |
+| Bastion | Connects to PostgreSQL to create the Praefect database/user. Holds the CA private key and signs server certificates. |
+| Gitaly VMs | Store repositories on their data volumes and serve TLS on port **9999**. |
+| Praefect VMs | Route repository requests to Gitaly, coordinate replication and store metadata in PostgreSQL. Serve TLS on port **3305**. |
+| External PostgreSQL | Stores Praefect metadata; accessed on port **5432**. |
 
-Run the complete bootstrap from the Ansible controller:
+Server private keys stay on their VMs. The CA private key stays on the bastion;
+only CSRs and public certificates travel between hosts.
+
+## 1. Set inventory and variables
+
+Edit [inventory/lab/hosts.ini](inventory/lab/hosts.ini), for example:
+
+```ini
+[gitaly]
+gitaly-1.internal
+gitaly-2.internal
+
+[praefect]
+praefect-1.internal
+praefect-2.internal
+
+[bastion]
+bastion.internal
+```
+
+Use real, resolvable hostnames and exactly one bastion. Membership controls where
+roles run: whichever host is under `[bastion]` receives the CA and database tasks.
+Check this before running; the checked-in inventory may reflect a previous lab.
+
+| Location | What to configure |
+|---|---|
+| `ansible.cfg` | Inventory path and SSH private-key path for your controller. |
+| `inventory/lab/group_vars/all/vars.yml` | SSH user, approved network/SSH ranges, pinned GitLab version and CA paths. |
+| `inventory/lab/group_vars/gitaly.yml` | Data disk attachment name, service port and callback settings. |
+| `inventory/lab/group_vars/praefect/vars.yml` | Replication factor, service port and extra certificate DNS names. |
+| `inventory/lab/group_vars/bastion/vars.yml` | PostgreSQL endpoint, database and usernames. |
+| `inventory/lab/host_vars/<inventory-hostname>.yml` | Node-specific storage name, blank-disk formatting opt-in and renewal target ID where needed. |
+| Group `vault.yml` files | Passwords, tokens and the CA key passphrase. Encrypt with Ansible Vault. |
+
+Role defaults provide fallback values. `group_vars/all/` applies to every host;
+matching group variables override it, and host variables supply per-node values.
+Keep real passwords, private keys and Vault unlock passwords out of Git.
+
+Before continuing:
+
+- Ensure SSH and sudo work from the controller. Update its private-key path.
+- Set approved CIDRs: `0.0.0.0/0` means everyone, not your private network.
+- Attach each Gitaly data volume as `/dev/sdb` in AWS. Set
+  `gitaly_format_data_disk: true` only for a confirmed blank data disk.
+- Set each Gitaly host's `gitaly_storage_name`; choose a replication factor no
+  greater than the number of Gitaly nodes.
+- Allow required private traffic through AWS security groups and UFW: Gitaly
+  **9999**, Praefect **3305**, PostgreSQL **5432**, and approved SSH **22**.
+- Add the hostname clients use through a TCP load balancer to Praefect's
+  `tls_extra_dns_names` before initial certificate issuance.
+
+## 2. Configure the cluster
+
+Run from the repository root on the controller:
 
 ```bash
 ansible-galaxy collection install -r collections/requirements.yml
+ansible all -m ping --ask-vault-pass
 ansible-playbook playbooks/configure_cluster.yml --syntax-check --ask-vault-pass
 ansible-playbook playbooks/configure_cluster.yml --ask-vault-pass
 ```
 
-The playbook runs OS/firewall preparation, Gitaly volume attachment, GitLab
-package installation, database/user provisioning from the bastion, CA generation
-on the bastion, certificate distribution, Gitaly configuration, then Praefect
-configuration. It prints manual migration and health-check commands at the end;
-it does not execute migrations or declare the cluster healthy.
+The playbook executes these stages in order:
 
-Before running, configure inventory, the shared AWS data attachment name, formatting opt-in
-for new disks, package version, and vaulted credentials. AWS VMs, RDS, private
-DNS and network access must already exist. In particular, allow Praefect and
-Gitaly peers to reach Gitaly TCP 9999, and the bastion/Praefect nodes to reach RDS
-TCP 5432. No AWS resources are provisioned by this playbook.
-
-Optional stage tags: `common`, `storage`, `installation`, `database`, `ca`,
-`certificates`, `gitaly`, `praefect`, `next_steps`. Selected stages assume their
-prerequisites are already complete. Avoid limiting a first full bootstrap to
-workload hosts: database and CA setup require the bastion. Use the stage tags for focused operations; there is one cluster playbook, with separate [NLB setup instructions](NLB-SETUP.md).
-
-Reconfiguration can restart services; serial execution is not a zero-downtime
-guarantee. Rails, NLB provisioning
-and automatic TLS renewal are not part of this bootstrap.
-
-
-`playbooks/configure_cluster.yml --tags common,installation` first runs the `common` role on Gitaly and Praefect, then installs the pinned GitLab package on Gitaly and Praefect only. AWS networking, EC2, DNS, and RDS instance creation remain separate.
-
-## What Ansible is
-
-Ansible is an automation tool that connects from a **control node** (your laptop or admin machine) to target Linux hosts, usually over SSH. It runs declarative tasks: describe the desired state (for example, a package installed or a config file present), and Ansible applies changes. A **playbook** says which hosts to act on and which **roles** to apply. An **inventory** identifies hosts and groups them. Variables hold environment-specific settings. Roles organize reusable tasks, templates, files, and defaults by responsibility.
-
-For this lab, inventory groups are `gitaly`, `praefect`, and `bastion`. They are not separate roles per VM: three Gitaly servers share the `gitaly` role, with node-specific values such as storage name supplied by inventory variables.
-
-## Suggested layout
-
-```text
-ansible.cfg
-inventory/
-  lab/
-    hosts.ini             # VM addresses grouped by role
-    group_vars/
-      all.yml             # shared, non-secret configuration
-      gitaly.yml          # Gitaly-specific settings (to add)
-      praefect.yml        # Praefect/RDS settings (to add)
-      bastion.yml         # bastion-only RDS administration settings (Vault)
-playbooks/
-  configure_cluster.yml   # ordered setup; stage tags for individual operations
-roles/
-  common/                 # common OS prep and service-account prerequisites
-  db/                     # create the Praefect RDS role and database from bastion
-  installation/           # shared GitLab package installation
-  gitaly/                 # Gitaly storage and service configuration
-  praefect/               # Praefect config, RDS CA, migrations/health checks
-  tls/                    # CA generation, certificate distribution; explicit renewal
-```
-
-Each role will eventually contain `tasks/main.yml` (actions), `defaults/main.yml` (overridable safe defaults), `templates/` (Jinja2 config templates), and optionally `handlers/main.yml` (restart/reload only when configuration changes). `files/` is for static assets. Add role subfolders only when there is a real need; do not create one role per server.
-
-## Why these roles
-
-- `common`: shared OS prerequisites and first-install preparation.
-- `installation`: shared GitLab package installation on both Gitaly and Praefect.
-- `gitaly`: independently selected data disk preparation and service configuration, targeting only Gitaly.
-- `praefect`: service configuration on the three Praefect nodes. Database creation/migration must be guarded and run once, not independently on every node.
-- `tls`: separate task files for CA generation on the bastion and certificate issuance/distribution to workload hosts. CA signing stays on the bastion. Renewal is a separate explicit workflow.
-
-TLS renewal should be a separate, deliberate playbook/workflow, not part of every normal deployment run. Praefect renewal needs a drain/verify/ready sequence via NLB target draining; Gitaly renewal needs one node at a time and replica health checks. Ansible can automate those steps, but a service restart may still interrupt active RPCs; do not promise zero downtime.
-
-## First manual-lab workflow
-
-1. Complete the manual runbook and record actual host addresses, exact package version, paths, and successful health checks.
-2. Install Ansible on the control node and configure SSH access. This machine's private SSH key stays on the control node.
-3. Fill `inventory/lab/hosts.ini`; test connectivity with `ansible all -m ping`.
-4. Automate a low-risk step first (for example, common packages), compare its result with the manual process, then continue role by role.
-5. Use `--check --diff` where supported, review proposed changes, and run against one test node before expanding.
-6. Store tokens, DB passwords, and other secrets with Ansible Vault. Do not commit vault passwords, leaf private keys, or the CA private key. Do not let Ansible initialize/replace the CA during routine renewal.
-7. Test rolling TLS renewal on a disposable cluster before relying on it.
-
-## Run the common role
-
-Run from this project directory on your control machine. Install Ansible there if needed (for Ubuntu: `sudo apt update && sudo apt install -y ansible`), then install the UFW collection:
-
-```bash
-ansible-galaxy collection install -r collections/requirements.yml
-```
-
-Edit `inventory/lab/hosts.ini`: put one reachable VM IP on each line under its group. No actual host addresses have been populated yet. Use SSH key authentication; keep your private key on your control machine.
-
-For example, with **sample addresses only**:
-
-```ini
-[gitaly]
-172.31.39.202
-
-[praefect]
-172.31.39.203
-
-[bastion]
-172.31.39.204
-```
-
-The group names match `group_vars/gitaly.yml`, `group_vars/praefect.yml`, and `group_vars/bastion/vars.yml`. Ansible loads the matching file for each IP; `group_vars/all.yml` applies to every IP. To target one VM with `--limit`, give its inventory IP.
-
-The firewall settings are in `inventory/lab/group_vars/`:
-
-| Setting | File | Value |
+| Stage/tag | Role/task | What it does |
 |---|---|---|
-| Internal source range | `all.yml` | `cluster_cidr: 172.31.32.0/20` |
-| SSH sources | `all.yml` | `ssh_sources`, initially the same subnet |
-| Gitaly TCP port | `gitaly.yml` | `common_service_ports: [9999]` |
-| Praefect TCP port | `praefect.yml` | `common_service_ports: [3305]` |
+| `common` | `common` | Prepare Gitaly/Praefect packages and UFW rules. |
+| `storage` | `gitaly/attach_storage.yml` | Identify the attached data disk, prepare ext4 where authorized, and mount it persistently at `/var/opt/gitlab/git-data`. |
+| `installation` | `installation` | Install the pinned GitLab package on both VM types, skipping automatic all-in-one reconfiguration. |
+| `database` | `db` | Create the Praefect database/login and permissions from the bastion. |
+| `ca` | `tls/ca_generation.yml` | Create or verify the private CA on the bastion. |
+| `certificates` | `tls/distribution_tls.yml` | Issue server certificates and install CA trust on Gitaly/Praefect. |
+| `gitaly` | `gitaly/configuration.yml` | Render Gitaly's `gitlab.rb` and apply configuration. |
+| `praefect` | `praefect` | Render Praefect's `gitlab.rb`, configure database/Gitaly connections and apply configuration. |
+| `next_steps` | Playbook output | Print the manual migration and verification commands. |
 
-`172.31.39.202/20` is a host address with a prefix; its network is `172.31.32.0/20`, covering `172.31.32.0` through `172.31.47.255`. CIDR `/20` describes the network size, not a port. Confirm all intended nodes are in this range.
-
-UFW rules match source IPs/CIDRs and do not dynamically resolve DNS names. For a bastion whose private IP may change, allow its subnet CIDR in UFW and restrict the AWS security group to the bastion's security group. For a single fixed bastion address, use its private IP with `/32`.
-
-For SSH through a bastion, configure the jump host in your local `~/.ssh/config`, for example:
-
-```sshconfig
-Host gitaly-lab-bastion
-    HostName REPLACE_BASTION_PUBLIC_IP
-    User ubuntu
-    IdentityFile ~/.ssh/lab-key.pem
-
-Host 172.31.*.*
-    User ubuntu
-    IdentityFile ~/.ssh/lab-key.pem
-    ProxyJump gitaly-lab-bastion
-```
-
-Use the target VMs' private IPs as inventory entries with this example. The bastion's own setup is outside this playbook. If connecting directly over public IPs instead, add your control machine's public source IP `/32` to `ssh_sources` **before running**. AWS security groups must also permit the connection.
-
-Check connectivity and syntax, then run against one node:
+For an already prepared cluster, rerun a specific stage using its tag:
 
 ```bash
-ansible gitaly:praefect -m ping --private-key ~/.ssh/lab-key.pem
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --syntax-check
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit REPLACE_FIRST_GITALY_IP --private-key ~/.ssh/lab-key.pem
+ansible-playbook playbooks/configure_cluster.yml \
+  --tags praefect --ask-vault-pass
 ```
 
-Keep your SSH session open and verify a new connection after the first run. Then run either group, or both:
+Selected stages require their earlier prerequisites. Configuration changes may
+restart services. Normal bootstrap preserves existing certificates and private keys.
+
+## 3. Migrate and verify
+
+After initial configuration, run migrations on **one Praefect VM only**:
 
 ```bash
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly --private-key ~/.ssh/lab-key.pem
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit praefect --private-key ~/.ssh/lab-key.pem
-# All inventoried Gitaly and Praefect hosts:
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --private-key ~/.ssh/lab-key.pem
+sudo -u git -- /opt/gitlab/embedded/bin/praefect \
+  -config /var/opt/gitlab/praefect/config.toml sql-migrate
 ```
 
-Add `--ask-become-pass` if your SSH user requires a sudo password. Hosts are processed one at a time. SSH and service allow rules are installed before default deny and UFW activation. The role refreshes apt metadata but does not upgrade all packages.
-
-Re-running keeps the requested rules present without duplicating them. Existing UFW rules are preserved: changing a source or port adds the new allowance but does not remove the old one. Review `sudo ufw status numbered` and remove obsolete allowances deliberately. NLB access is configured separately in AWS.
-
-`--check --diff` is useful after UFW is installed. On a fresh VM, check mode cannot actually install UFW, so subsequent UFW tasks may fail because its executable is absent.
-
-The cluster playbook includes OS/firewall preparation and GitLab package installation. Service configuration and TLS use separate playbooks. Module references: [Ansible UFW](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html) and [Ansible apt](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
-
-## Install the GitLab package on storage VMs
-
-The `installation` role installs the same exact GitLab EE package version on Gitaly and Praefect. It adds the official apt repository, creates `/etc/gitlab/skip-auto-reconfigure` before package installation so the storage VMs do not start as standalone GitLab instances, and holds the installed version. It does not write `gitlab.rb` or configure Gitaly/Praefect services.
-
-Set `gitlab_ee_version` in `inventory/lab/group_vars/all.yml` to the exact package version compatible with the GitLab application, for example `18.8.2-ee.0` (example only). The value must not be blank. GitLab's official Ubuntu install guide covers repository and package setup: [GitLab package install](https://docs.gitlab.com/install/package/ubuntu/).
-
-The default preparation run performs both stages. To select only firewall preparation, use `--tags common`; to select only package installation, use `--tags installation`. Run on one node first, then expand:
+Then run on **each Praefect VM**:
 
 ```bash
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --syntax-check
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly-1.repo-data.internal
-ansible-playbook playbooks/configure_cluster.yml --tags common,installation --limit gitaly:praefect
+sudo gitlab-ctl status praefect
+sudo gitlab-ctl praefect check
 ```
 
-Use the inventory hostname for the first command if yours differs. The role requires outbound access to GitLab's package repository and package storage URLs. After package installation, follow the manual runbook's bootstrap configuration to create the `git` service account before installing certificate keys.
-
-## Prepare the Praefect database from the bastion
-
-Add the bastion private DNS name or private IP under `[bastion]` in `inventory/lab/hosts.ini`. The cluster playbook’s `database` stage targets only this group; its PostgreSQL modules execute on the bastion and connect to RDS. It creates the Praefect login role/database and grants database/schema access. It does not create Praefect's application tables; one designated Praefect node runs GitLab's schema migrations later.
-
-Install the collection and encrypt the bastion variables file:
+On each Gitaly VM:
 
 ```bash
-ansible-galaxy collection install -r collections/requirements.yml
-ansible-vault encrypt inventory/lab/group_vars/bastion.yml
+sudo gitlab-ctl status gitaly
+sudo mountpoint /var/opt/gitlab/git-data
 ```
 
-Edit the encrypted file with `ansible-vault edit inventory/lab/group_vars/bastion.yml`; set the exact RDS endpoint and both passwords (`praefect_db_master_password` and `praefect_db_password`). The role installs `python3-psycopg2` on the bastion. Then validate and run:
+A successful playbook does not replace these health checks. Future version
+upgrades can require new database migrations; do not run migrations concurrently.
+
+## 4. Renew certificates separately
+
+Renewal preserves the CA and server private keys. It updates CSRs/certificates
+when DNS names change, certificates reach the renewal age, or expiry approaches.
+
+For a lab or agreed maintenance window **with application traffic stopped**:
 
 ```bash
-ansible-playbook playbooks/configure_cluster.yml --tags database --syntax-check
-ansible-playbook playbooks/configure_cluster.yml --tags database --ask-vault-pass
+ansible-playbook playbooks/renew_tls.yml \
+  --limit praefect --ask-vault-pass \
+  -e tls_renew_maintenance_window=true
 ```
 
-The bastion must be reachable by Ansible and have network access to private RDS on TCP 5432. The RDS security group should allow 5432 from the bastion and Praefect security groups. Keep credentials Vault-encrypted; password-bearing tasks suppress output.
+Remove `--limit praefect` to include Gitaly. Nodes restart one at a time;
+maintenance mode bypasses NLB draining and does not stop traffic for you.
 
-## Prepare Gitaly repository disks
+For live Praefect renewal, configure NLB draining first. The optional controller
+timer checks daily and renews at 30 days by default. It is not enabled by bootstrap.
+See [TLS renewal](roles/tls/RENEWAL.md) for draining, timer setup and limitations.
 
-On every Gitaly VM, attach the dedicated EBS repository volume using the AWS
-attachment name `/dev/sdb`. Keep the root volume on its existing root-device
-mapping. Configure the shared convention in `inventory/lab/group_vars/gitaly.yml`:
-
-```yaml
-gitaly_data_attachment_name: /dev/sdb
-```
-
-No per-host volume ID is required. The role installs `nvme-cli`, reads the AWS
-attachment name from each EBS NVMe controller, and requires exactly one match.
-Linux may call that disk `/dev/nvme1n1` or a different NVMe number; the AWS
-attachment name is what selects it. This workflow requires Nitro/NVMe EBS.
-It stops if the attachment is absent/ambiguous, partitioned, layered, read-only,
-mounted elsewhere, has unexpected filesystem signatures, or would cover
-existing files at the target mountpoint. It does not attach volumes in AWS.
-
-For a confirmed new blank data disk, set `gitaly_format_data_disk: true` in its
-host variables. The default is false; existing lab opt-ins are preserved.
-Only a disk without a filesystem or detected signatures is formatted. Existing
-whole-disk ext4 volumes are reused. The filesystem UUID is still used in fstab
-at `/var/opt/gitlab/git-data`. Existing deployments must confirm the attachment
-name in AWS before rerunning; the role will not silently choose another disk.
-
-```bash
-ansible-playbook playbooks/configure_cluster.yml --tags storage --syntax-check --ask-vault-pass
-ansible-playbook playbooks/configure_cluster.yml --tags storage --limit gitaly-1.repo-data.internal --ask-vault-pass
-ansible-playbook playbooks/configure_cluster.yml --tags storage --ask-vault-pass
-```
-
-Disk discovery is read-only, including in check mode. On fresh VMs check mode
-cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
-fresh-disk dry run is not supported.
-
-## Internal NLB endpoint
-
-Follow [NLB-SETUP.md](NLB-SETUP.md) to configure `nlb.tyagi.fun:443`, install your
-public certificate on Praefect, configure DNS and test TLS/gRPC through NLB.
-AWS NLB resources are configured separately from the cluster playbook.
-
-## Certificate renewal
-
-See [TLS renewal](roles/tls/RENEWAL.md) for `playbooks/renew_tls.yml`, adding the
-NLB name without changing keys, and the optional 30-day Praefect renewal schedule.
-Bootstrap never renews existing certificates.
+Role details: [Gitaly](roles/gitaly/README.md) ·
+[Praefect](roles/praefect/README.md) · [Database](roles/db/README.md) ·
+[TLS](roles/tls/README.md) · [Installation](roles/installation/README.md).
