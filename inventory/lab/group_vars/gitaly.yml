@@ -1,6 +1,6 @@
 ---
 # Team convention: attach the dedicated EBS data volume as /dev/sdb in AWS.
-gitaly_data_attachment_name: /dev/sdb
+gitaly_data_attachment_name: /dev/sdf
 
 common_service_ports:
   - "{{ gitaly_tls_port if (cluster_rpc_tls_enabled | bool) else gitaly_plaintext_port }}"

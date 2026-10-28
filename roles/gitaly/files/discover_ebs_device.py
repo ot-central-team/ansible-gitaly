@@ -14,7 +14,7 @@ def command(*args):
 def attachment_name(value):
     name = value.removeprefix('/dev/')
     if not re.fullmatch(r'sd[b-z]', name):
-        raise ValueError('Use a dedicated AWS data attachment name such as /dev/sdb.')
+        raise ValueError('Use a dedicated AWS data attachment name such as /dev/sdf.')
     return name
 
 
