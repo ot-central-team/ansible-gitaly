@@ -1,5 +1,0 @@
-# Stored as key "connection" in Secret gitlab-rails-storage.
-provider: AWS
-region: ap-south-1
-use_iam_profile: true
-# No static AWS credentials or endpoint override: credentials come from IRSA.

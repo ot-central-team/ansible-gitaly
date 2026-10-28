@@ -1,4 +1,4 @@
-praefect_db_host: database-1.c5cqyc2iyfb3.ap-south-1.rds.amazonaws.com
+praefect_db_host: gitlab-hybrid-praefect.c5cqyc2iyfb3.ap-south-1.rds.amazonaws.com
 praefect_db_port: 5432
 praefect_db_name: praefect_production
 praefect_db_user: praefect

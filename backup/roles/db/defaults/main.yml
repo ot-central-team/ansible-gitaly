@@ -1,6 +1,0 @@
----
-praefect_db_port: 5432
-praefect_db_name: praefect_production
-praefect_db_user: praefect
-praefect_db_master_user: postgres
-praefect_db_ssl_mode: require
