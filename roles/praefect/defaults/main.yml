@@ -1,6 +1,11 @@
 ---
 praefect_config_path: /etc/gitlab/gitlab.rb
-praefect_tls_listen_address: '0.0.0.0:3305'
+# Praefect RPC is plaintext by default. TLS can be enabled explicitly.
+praefect_enable_tls: false
+praefect_plaintext_port: 2305
+praefect_tls_port: 3305
+praefect_listen_address: "0.0.0.0:{{ praefect_plaintext_port }}"
+praefect_tls_listen_address: "0.0.0.0:{{ praefect_tls_port }}"
 praefect_tls_certificate_path: /etc/gitlab/ssl/server.crt
 # System bundle includes public CAs and our internal CA installed by the TLS role.
 praefect_gitaly_ca_certificate_path: /etc/ssl/certs/ca-certificates.crt

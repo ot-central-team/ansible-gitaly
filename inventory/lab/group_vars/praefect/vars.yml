@@ -1,6 +1,6 @@
 ---
 common_service_ports:
-  - 3305
+  - "{{ praefect_tls_port if (praefect_enable_tls | bool) else praefect_plaintext_port }}"
 
 praefect_default_replication_factor: 2
 

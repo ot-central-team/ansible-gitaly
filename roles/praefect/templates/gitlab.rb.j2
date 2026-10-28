@@ -21,12 +21,16 @@ praefect['auto_migrate'] = false
 praefect['env']['SSL_CERT_FILE'] = {{ praefect_gitaly_ca_certificate_path | to_json }}
 
 praefect['configuration'] = {
+{% if praefect_enable_tls | bool %}
   listen_addr: nil,
   tls_listen_addr: {{ praefect_tls_listen_address | to_json }},
   tls: {
     certificate_path: {{ praefect_tls_certificate_path | to_json }},
     key_path: {{ praefect_tls_privatekey_path | to_json }},
   },
+{% else %}
+  listen_addr: {{ praefect_listen_address | to_json }},
+{% endif %}
   auth: {
     token: {{ praefect_external_token | to_json }},
   },
@@ -47,7 +51,7 @@ praefect['configuration'] = {
 {% for gitaly_host in groups['gitaly'] %}
         {
           storage: {{ (hostvars[gitaly_host].gitaly_storage_name | default(gitaly_host.split('.')[0])) | to_json }},
-          address: {{ ('tls://' ~ gitaly_host ~ ':9999') | to_json }},
+          address: {{ ((('tls://' ~ gitaly_host ~ ':' ~ (hostvars[gitaly_host].gitaly_tls_port | default(9999) | string)) if (hostvars[gitaly_host].gitaly_enable_tls | default(false) | bool) else ('tcp://' ~ gitaly_host ~ ':' ~ (hostvars[gitaly_host].gitaly_plaintext_port | default(8075) | string))) | to_json }},
           token: {{ praefect_internal_token | to_json }},
         },
 {% endfor %}

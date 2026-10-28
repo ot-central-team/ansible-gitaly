@@ -16,9 +16,9 @@ Toolbox / migration jobs ──────────────────�
                                                   ├→ Rails RDS PostgreSQL
                                                   ├→ ElastiCache Redis
                                                   ├→ S3 via IAM roles
-                                                  └→ nlb.tyagi.fun:443
-                                                      → Praefect:3305
-                                                        → Gitaly nodes:9999
+                                                    └→ nlb.tyagi.fun:443
+                                                      → Praefect:2305 (plaintext RPC)
+                                                        → Gitaly nodes:8075 (plaintext by default; 9999 with TLS)
 Gitaly hooks → https://gitlab.opstree.dev/api/v4/internal/...
 ```
 
@@ -158,8 +158,8 @@ Allow only required traffic in security groups and host firewalls:
 | Application pods + bastion | Rails RDS | 5432 |
 | Application pods | Redis primary/replicas | 6379 |
 | Application pods | NLB endpoint | 443 |
-| NLB | Praefect | 3305 |
-| Praefect and Gitaly peers | Gitaly | 9999 |
+| NLB | Praefect | 2305 (plaintext default) or 3305 (TLS) |
+| Praefect and Gitaly peers | Gitaly | 8075 (plaintext default) or 9999 (TLS) |
 | Praefect | Existing Praefect RDS | 5432 |
 | Application/CI nodes | DNS, image registries, S3, regional STS, SMTP | DNS 53; HTTPS 443; SMTP 587 as needed |
 
@@ -167,11 +167,12 @@ Use the **actual pod source security group/IP path**, accounting for VPC CNI,
 NAT, custom networking and any security groups for pods. Private DNS/routing to
 `nlb.tyagi.fun` must resolve through a CNAME to the internal NLB DNS name.
 EKS must have private network access to that VPC; public DNS does not provide
-an internet route. Do not expose 3305 or 9999 publicly. Existing ALB controller
+an internet route. Do not expose Praefect or Gitaly RPC ports publicly. Existing ALB controller
 permissions must allow target registration and backend SG updates.
 
 This baseline terminates TLS at ALB and uses HTTP to Workhorse inside the
-private VPC. RDS, Redis and NLB connections use TLS. If your policy requires
+private VPC. Rails-to-Praefect RPC is plaintext in this setup; RDS and Redis
+connections use TLS. If your policy requires
 TLS on the ALB-to-pod leg, configure Workhorse backend TLS before launch; do not
 describe this baseline as end-to-end encrypted.
 
@@ -399,12 +400,13 @@ PY
 kubectl -n gitlab create secret generic aws-rds-ca --from-file=eks/local/rds-ca
 ```
 
-The chart adds these CAs to its normal public trust bundle. Follow
-[NLB-SETUP.md](NLB-SETUP.md) first: NLB passes TCP through to Praefect, which
-presents your publicly trusted certificate for `nlb.tyagi.fun`. EKS therefore
-does not need the private internal CA for this endpoint. Praefect still trusts
-the private CA when connecting to Gitaly. No TLS private keys belong in EKS.
-Public ALB TLS uses ACM, so no Kubernetes ingress TLS Secret is needed.
+The chart adds these CAs to its normal public trust bundle for database
+connections. The default backend setting uses plaintext to Praefect through
+the NLB (`tlsEnabled: false`), so the NLB listener must forward to a target
+group on Praefect port 2305. Confirm or update the target group's backend port;
+changing Ansible alone does not update AWS. Gitaly and Praefect RPC are
+plaintext inside the private network by default. No TLS private keys belong in
+EKS. Public ALB TLS uses ACM, so no Kubernetes ingress TLS Secret is needed.
 
 Store durable copies of these secrets encrypted outside the cluster. Enable
 appropriate EKS secret encryption and restrict Secret read/RBAC access. Do not

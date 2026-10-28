@@ -31,7 +31,7 @@ tls_renew_force: false
 # For a planned maintenance window only; otherwise Praefect drains through NLB.
 tls_renew_maintenance_window: false
 # Live Praefect renewal: target-group ARN, plus each node's ID in host_vars.
-# Region is derived from the ARN; the target port is the service port (3305).
+# Region is derived from the ARN; TLS renewal targets the Praefect TLS port (3305).
 tls_renew_nlb_target_group_arn: ''
 tls_renew_nlb_target_id: ''
 

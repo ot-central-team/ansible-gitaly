@@ -30,7 +30,7 @@
       - "{{ gitaly_repository_mountpoint }}"
   changed_when: false
 
-- name: Confirm this Gitaly VM has its issued TLS key, certificate, and trusted CA
+- name: Confirm this Gitaly VM has its issued TLS key, certificate, and trust bundle
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
@@ -38,12 +38,14 @@
     - "{{ gitaly_tls_privatekey_path }}"
     - "{{ gitaly_ca_certificate_path }}"
   register: gitaly_tls_files
+  when: gitaly_enable_tls | bool
 
-- name: Require the Gitaly TLS key, certificate, and trusted CA before configuration
+- name: Require the Gitaly TLS key, certificate, and trust bundle before configuration
   ansible.builtin.assert:
     that:
       - gitaly_tls_files.results | map(attribute='stat.exists') | min
     fail_msg: Run the TLS certificate playbook for this Gitaly host first.
+  when: gitaly_enable_tls | bool
 
 - name: Verify the trust bundle accepts this node's internal certificate
   ansible.builtin.command:
@@ -54,6 +56,7 @@
       - "{{ gitaly_ca_certificate_path }}"
       - "{{ gitaly_tls_certificate_path }}"
   changed_when: false
+  when: gitaly_enable_tls | bool
 
 - name: Install the Gitaly GitLab configuration
   ansible.builtin.template:

@@ -6,14 +6,16 @@ changes. It deliberately keeps `praefect['auto_migrate']` disabled. Database
 schema migration is a separate manual action on one designated Praefect node.
 Set `praefect_refresh_rds_ca_bundle=true` for a planned CA bundle refresh.
 
-The TLS certificate role installs the public internal CA into Ubuntu's system
-trust store and runs `update-ca-certificates` when it changes. This lets manual
-checks use system trust without shell exports. Praefect also gets a persistent
-`SSL_CERT_FILE` service setting pointing to `praefect_gitaly_ca_certificate_path`
-(default `/etc/ssl/certs/ca-certificates.crt`). The role verifies the internal
-node certificate against this combined public/internal CA bundle before applying
-configuration.
-The CA private key stays on the bastion.
+Praefect RPC listens without TLS on port 2305 by default. Set
+`praefect_enable_tls: true` to opt into TLS on port 3305; the TLS certificate
+stage must then be completed before configuring Praefect. TLS to the database
+is separate and remains enabled with `sslmode: verify-full` by default.
+
+When Praefect RPC TLS is enabled, the TLS certificate role installs the public
+internal CA into Ubuntu's system trust store and Praefect verifies its node
+certificate against the combined bundle. The CA private key stays on the
+bastion. Praefect's outbound database TLS trust bundle is independent of its
+RPC listener mode.
 
 To apply this trust setup to existing nodes, run from the Ansible controller:
 
@@ -34,10 +36,12 @@ sudo cat /opt/gitlab/etc/praefect/env/SSL_CERT_FILE
 
 The environment file should contain the configured public CA certificate path.
 
-The role derives Gitaly addresses from the `gitaly` inventory group and uses
-each inventory hostname as the TLS DNS name. The Gitaly storage name defaults
-to the short inventory name (for example, `gitaly-1`); the Gitaly role must use
-the same storage name.
+The role derives Gitaly addresses from the `gitaly` inventory group. For each
+node it uses `tcp://` by default on port 8075, or `tls://` on port 9999 when that node has
+`gitaly_enable_tls: true`. In TLS mode, the inventory hostname must be in the
+node certificate's DNS SAN. The Gitaly storage name defaults to the short
+inventory name (for example, `gitaly-1`); the Gitaly role must use the same
+storage name.
 
 ## Required secrets
 
@@ -59,9 +63,11 @@ The role reads database connection settings from
 
 ## Run
 
-Configure Gitaly nodes first with `playbooks/configure_cluster.yml --tags gitaly`. Then issue
-and install the Praefect node certificate and ensure the RDS CA bundle URL is
-reachable from each Praefect VM. Run:
+Configure Gitaly nodes first with `playbooks/configure_cluster.yml --tags gitaly`.
+For default plaintext Praefect RPC, a node certificate is not required for
+Praefect configuration. Ensure the RDS CA bundle URL is reachable from each
+Praefect VM. For TLS-enabled Praefect RPC, run the certificates stage first.
+Then run:
 
 ```bash
 ansible-playbook playbooks/configure_cluster.yml --tags praefect --syntax-check --ask-vault-pass
@@ -87,8 +93,9 @@ Do not run `sql-migrate` on every Praefect node. For GitLab/Praefect upgrades,
 follow the upgrade procedure for the installed GitLab version and continue to
 run migrations on only the designated deployment node.
 
-The original internal CA remains in `/etc/gitlab/trusted-certs` and
-`/usr/local/share/ca-certificates`. The TLS role runs `update-ca-certificates`
-to include it in the system bundle. Do not move or overwrite the system bundle
-with a single CA certificate. Rerun the `certificates` stage before service
-configuration if system trust has not yet been installed.
+When either RPC service uses TLS, the internal CA is installed in
+`/etc/gitlab/trusted-certs` and `/usr/local/share/ca-certificates`; the TLS role
+runs `update-ca-certificates` to include it in the system bundle. Do not move or
+overwrite the system bundle with a single CA certificate. Plaintext RPC does
+not require the internal CA. Praefect's separate RDS TLS still uses the AWS RDS
+CA bundle.

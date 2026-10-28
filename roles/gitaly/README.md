@@ -3,11 +3,14 @@
 This role contains two independently selectable task files:
 
 - `tasks/attach_storage.yml`: format and mount the EBS repository volume.
-- `tasks/configuration.yml`: configure the Gitaly service and TLS listener.
+- `tasks/configuration.yml`: configure the Gitaly service; its RPC listener is
+  plaintext by default on port 8075, with TLS available as an explicit opt-in
+  on port 9999.
 
 Both use `defaults/main.yml`. The configuration template is in
-`templates/gitlab.rb.j2`. The repository filesystem, GitLab package, and TLS
-certificates must be ready before running the configuration tasks.
+`templates/gitlab.rb.j2`. The repository filesystem and GitLab package must be
+ready before running the configuration tasks. Node TLS certificates are only
+required when `gitaly_enable_tls: true`.
 
 Select the desired task file in your playbook:
 
@@ -25,7 +28,8 @@ The cluster playbook selects these files through its `storage` and `gitaly` stag
 
 Each Gitaly host needs an explicit `gitaly_storage_name` in `host_vars`. That
 name must match the corresponding `storage` entry rendered by the Praefect
-role. The role uses the inventory hostname as the TLS endpoint name.
+role. Praefect selects `tcp://` or `tls://` per Gitaly host from
+`gitaly_enable_tls`.
 
 Required inventory values:
 
@@ -37,19 +41,25 @@ Required inventory values:
   application's private/internal API URL.
 - Per-host `gitaly_storage_name`: `gitaly-1`, `gitaly-2`, and so on.
 
-The role checks that the repository mount and node TLS files exist, writes a
-root-only `/etc/gitlab/gitlab.rb`, and reconfigures only when that file changes.
-It disables Rails migrations on the storage nodes.
+The role checks that the repository mount exists and, only when TLS is enabled,
+that the node certificate/key and CA bundle exist and the certificate verifies.
+It writes a root-only `/etc/gitlab/gitlab.rb`, reconfigures only when that file
+changes, and disables Rails migrations on the storage nodes.
 
-Outgoing TLS connections use the persistent service setting
+Outbound HTTPS connections use the persistent service setting
 `gitaly['env']['SSL_CERT_FILE']`, pointing to `gitaly_ca_certificate_path`
-(default `/etc/ssl/certs/ca-certificates.crt`). The role checks
-that this bundle exists and verifies the node certificate against it before configuring Gitaly. The TLS certificate
-role also installs this CA into Ubuntu's system trust store on both Gitaly
-and Praefect nodes. No interactive shell export is required.
+(default `/etc/ssl/certs/ca-certificates.crt`). When Gitaly RPC TLS is enabled,
+this bundle is also used to verify the node certificate. The TLS certificate
+role installs the internal CA into Ubuntu's system trust store. This outbound
+HTTPS trust setting does not turn on TLS for the Gitaly RPC listener.
 
-For existing nodes, run `playbooks/configure_cluster.yml --tags certificates` first if the system
-trust update has not been applied, then `playbooks/configure_cluster.yml --tags gitaly`.
+For encrypted Gitaly RPC, set `gitaly_enable_tls: true` for the relevant Gitaly
+hosts and run the `certificates` stage before configuration. By default,
+Gitaly RPC is plaintext on port 8075 and Praefect uses `tcp://` for those endpoints.
+Praefect's own listener is also plaintext on port 2305 by default; it can
+independently opt into TLS on 3305. Changing transport on an existing
+cluster requires coordinating Gitaly and Praefect reconfiguration; schedule a
+maintenance window because the two sides must agree on the transport.
 The configuration playbook processes one node at a time. Reconfiguration may
 restart Gitaly; serial execution alone does not guarantee uninterrupted traffic.
 After deployment, check `/opt/gitlab/etc/gitaly/env/SSL_CERT_FILE` on each node
@@ -68,12 +78,18 @@ are not ready. When Rails is deployed, set the switch to `true`, configure the
 real reachable URL and shared GitLab Shell secret, then rerun the role. The
 secret must also be configured on the GitLab application server.
 
-Run after the data disks and TLS certificates are ready:
+Run after the data disks and GitLab package are ready (and certificates too if
+`gitaly_enable_tls` is enabled). When changing the transport mode, run both the
+`gitaly` and `praefect` tags so both ends are updated:
 
 ```bash
-ansible-playbook playbooks/configure_cluster.yml --tags gitaly --syntax-check --ask-vault-pass
-ansible-playbook playbooks/configure_cluster.yml --tags gitaly --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags certificates,gitaly,praefect --syntax-check --ask-vault-pass
+ansible-playbook playbooks/configure_cluster.yml --tags certificates,gitaly,praefect --ask-vault-pass
 ```
+
+For the default plaintext mode, omit `certificates` from those commands. Include
+it when enabling Gitaly TLS or when you separately need to provision/update
+node trust.
 
 Shared package installation lives in `roles/installation` and targets both
 Gitaly and Praefect through `playbooks/configure_cluster.yml --tags common,installation`.
@@ -113,8 +129,8 @@ Disk discovery is read-only, including in check mode. On fresh VMs check mode
 cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
 fresh-disk dry run is not supported.
 
-The original internal CA remains in `/etc/gitlab/trusted-certs` and
-`/usr/local/share/ca-certificates`. The TLS role runs `update-ca-certificates`
-to include it in the system bundle. Do not move or overwrite the system bundle
-with a single CA certificate. Rerun the `certificates` stage before service
-configuration if system trust has not yet been installed.
+When either RPC service uses TLS, the internal CA is installed in
+`/etc/gitlab/trusted-certs` and `/usr/local/share/ca-certificates`; the TLS role
+runs `update-ca-certificates` to include it in the system bundle. Do not move or
+overwrite the system bundle with a single CA certificate. The plaintext
+Gitaly/Praefect RPC configuration does not require the internal CA.

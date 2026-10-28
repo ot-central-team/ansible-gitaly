@@ -87,7 +87,7 @@
     ansible.builtin.set_fact:
       tls_renew_service: '{{ ''praefect'' if inventory_hostname in groups.get(''praefect'', []) else ''gitaly''
         }}'
-      tls_renew_port: '{{ 3305 if inventory_hostname in groups.get(''praefect'', []) else 9999 }}'
+      tls_renew_port: '{{ praefect_tls_port if inventory_hostname in groups.get(''praefect'', []) else gitaly_tls_port }}'
       tls_renew_names: '{{ ([inventory_hostname] + tls_extra_dns_names) | unique | list }}'
       tls_renew_drain: '{{ inventory_hostname in groups.get(''praefect'', []) and not (tls_renew_maintenance_window
         | bool) }}'

@@ -77,7 +77,9 @@ Set each VM's registered EC2 instance ID in its own host_vars file:
 tls_renew_nlb_target_id: i-REPLACE_WITH_THIS_PRAEFECT_INSTANCE
 ```
 
-Region is derived from the ARN, and the Praefect target port is 3305.
+Region is derived from the ARN, and the Praefect TLS target port is 3305. This
+renewal workflow only applies to TLS-enabled Praefect deployments; it is not
+needed while Praefect RPC is running plaintext on port 2305.
 Use the exact target-group ARN and IDs shown in EC2 Target Groups. This workflow
 handles a single instance target group per node; do not use it if the service
 receives traffic through other target groups or direct clients that also need

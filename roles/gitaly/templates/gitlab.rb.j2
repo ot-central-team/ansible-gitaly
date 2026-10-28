@@ -18,18 +18,23 @@ gitaly['gitlab_secret'] = {{ gitaly_gitlab_secret_token | to_json }}
 {% endif %}
 gitaly['enable'] = true
 
-# Trust public HTTPS endpoints and internal peers using the combined CA bundle.
-# Preserve the other default GitLab service environment settings.
+# Trust outbound HTTPS endpoints using the system CA bundle. This does not
+# enable TLS on the Gitaly RPC listener.
 gitaly['env']['SSL_CERT_FILE'] = {{ gitaly_ca_certificate_path | to_json }}
 
 gitaly['configuration'] = {
-  # Disable plaintext. Gitaly is reachable only over TLS on port 9999.
+{% if gitaly_enable_tls | bool %}
+  # TLS is opt-in. When enabled, disable the plaintext listener.
   listen_addr: nil,
   tls_listen_addr: {{ gitaly_tls_listen_address | to_json }},
   tls: {
     certificate_path: {{ gitaly_tls_certificate_path | to_json }},
     key_path: {{ gitaly_tls_privatekey_path | to_json }},
   },
+{% else %}
+  # Default mode: serve Gitaly RPC without transport TLS.
+  listen_addr: {{ gitaly_listen_address | to_json }},
+{% endif %}
   auth: {
     # Must exactly match praefect_internal_token on every Praefect VM.
     token: {{ praefect_internal_token | to_json }},

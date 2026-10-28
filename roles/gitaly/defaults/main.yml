@@ -7,7 +7,13 @@ gitaly_data_mountpoint: /var/opt/gitlab/git-data
 
 # Gitaly service configuration defaults.
 gitaly_config_path: /etc/gitlab/gitlab.rb
-gitaly_tls_listen_address: '0.0.0.0:9999'
+# Gitaly RPC is plaintext by default. Enable this together with certificates
+# when encrypted Praefect-to-Gitaly traffic is required.
+gitaly_enable_tls: false
+gitaly_plaintext_port: 8075
+gitaly_tls_port: 9999
+gitaly_listen_address: "0.0.0.0:{{ gitaly_plaintext_port }}"
+gitaly_tls_listen_address: "0.0.0.0:{{ gitaly_tls_port }}"
 gitaly_tls_certificate_path: /etc/gitlab/ssl/server.crt
 gitaly_tls_privatekey_path: /etc/gitlab/ssl/server.key
 # System bundle includes public CAs and our internal CA installed by the TLS role.

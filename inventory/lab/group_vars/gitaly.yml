@@ -3,7 +3,7 @@
 gitaly_data_attachment_name: /dev/sdb
 
 common_service_ports:
-  - 9999
+  - "{{ gitaly_tls_port if (gitaly_enable_tls | bool) else gitaly_plaintext_port }}"
 
 # The Rails application is not set up yet. Enable this and provide the API URL
 # and GitLab Shell secret after the application is deployed.

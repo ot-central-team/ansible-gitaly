@@ -33,7 +33,7 @@ global:
       - name: default
         hostname: nlb.tyagi.fun
         port: 443
-        tlsEnabled: true
+        tlsEnabled: false
     authToken:
       secret: praefect-external-token
       key: token

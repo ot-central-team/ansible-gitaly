@@ -20,7 +20,7 @@
       variables, and ensure there are enough Gitaly nodes for the replication factor.
   no_log: true
 
-- name: Confirm this Praefect VM has its issued TLS key and certificate
+- name: Confirm this Praefect VM has its issued TLS key, certificate, and trust bundle
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
@@ -28,12 +28,14 @@
     - "{{ praefect_tls_privatekey_path }}"
     - "{{ praefect_gitaly_ca_certificate_path }}"
   register: praefect_tls_files
+  when: praefect_enable_tls | bool
 
-- name: Require the Praefect TLS key and certificate before configuration
+- name: Require the Praefect TLS key, certificate, and trust bundle before configuration
   ansible.builtin.assert:
     that:
       - praefect_tls_files.results | map(attribute='stat.exists') | min
     fail_msg: Run the TLS certificate playbook for this Praefect host first.
+  when: praefect_enable_tls | bool
 
 - name: Download the AWS RDS CA bundle for full database certificate validation
   ansible.builtin.get_url:
@@ -56,6 +58,7 @@
       - "{{ praefect_tls_certificate_path }}"
       - "{{ praefect_tls_certificate_path }}"
   changed_when: false
+  when: praefect_enable_tls | bool
 
 - name: Install the Praefect GitLab configuration
   ansible.builtin.template:
