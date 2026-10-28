@@ -1,4 +1,24 @@
 ---
+- name: Validate the shared RPC transport before changing any host
+  hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [always]
+  tasks:
+    - name: Require one boolean mode and reject obsolete independent switches
+      ansible.builtin.assert:
+        that:
+          - cluster_rpc_tls_enabled is defined
+          - cluster_rpc_tls_enabled is boolean
+          - gitaly_enable_tls is not defined
+          - praefect_enable_tls is not defined
+          - hostvars[item].cluster_rpc_tls_enabled == cluster_rpc_tls_enabled
+        fail_msg: >-
+          Set cluster_rpc_tls_enabled to true or false in group_vars/all.
+          Remove gitaly_enable_tls/praefect_enable_tls and any conflicting host/group
+          overrides. Both RPC services must use the same mode, including the bastion.
+      loop: "{{ groups['all'] }}"
+
 - name: 1. Prepare VM packages and firewall
   hosts: gitaly:praefect
   become: true
@@ -48,12 +68,7 @@
     ansible.builtin.import_role:
       name: tls
       tasks_from: ca_generation.yml
-    when: >-
-      (groups['gitaly'] | map('extract', hostvars)
-       | map(attribute='gitaly_enable_tls') | select('bool') | list | length > 0)
-      or
-      (groups['praefect'] | map('extract', hostvars)
-       | map(attribute='praefect_enable_tls') | select('bool') | list | length > 0)
+    when: cluster_rpc_tls_enabled | bool
   any_errors_fatal: true
   tags:
   - ca
@@ -68,10 +83,7 @@
     ansible.builtin.import_role:
       name: tls
       tasks_from: distribution_tls.yml
-    when: >-
-      (inventory_hostname in groups['gitaly'] and gitaly_enable_tls | bool)
-      or
-      (inventory_hostname in groups['praefect'] and praefect_enable_tls | bool)
+    when: cluster_rpc_tls_enabled | bool
   tags:
   - certificates
 - name: 7. Configure Gitaly nodes separately from their data disks

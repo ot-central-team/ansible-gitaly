@@ -1,0 +1,82 @@
+---
+- name: Validate Praefect topology, database credentials, and tokens
+  ansible.builtin.assert:
+    that:
+      - groups['bastion'] | length == 1
+      - groups['gitaly'] | length >= (praefect_default_replication_factor | int)
+      - praefect_external_token | length >= 32
+      - praefect_internal_token | length >= 32
+      - praefect_external_token != praefect_internal_token
+      - hostvars[groups['bastion'][0]]['praefect_db_host'] is defined
+      - hostvars[groups['bastion'][0]]['praefect_db_password'] is defined
+      - hostvars[groups['bastion'][0]]['praefect_db_port'] is defined
+      - hostvars[groups['bastion'][0]]['praefect_db_name'] is defined
+      - hostvars[groups['bastion'][0]]['praefect_db_user'] is defined
+      - hostvars[groups['bastion'][0]]['praefect_db_host'] | length > 0
+      - hostvars[groups['bastion'][0]]['praefect_db_password'] | length > 0
+    fail_msg: >-
+      Set the RDS endpoint and Praefect DB password in the vaulted bastion
+      variables, add long distinct external/internal tokens in vaulted Praefect
+      variables, and ensure there are enough Gitaly nodes for the replication factor.
+  no_log: true
+
+- name: Confirm this Praefect VM has its issued TLS key, certificate, and trust bundle
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ praefect_tls_certificate_path }}"
+    - "{{ praefect_tls_privatekey_path }}"
+    - "{{ praefect_gitaly_ca_certificate_path }}"
+  register: praefect_tls_files
+  when: praefect_enable_tls | bool
+
+- name: Require the Praefect TLS key, certificate, and trust bundle before configuration
+  ansible.builtin.assert:
+    that:
+      - praefect_tls_files.results | map(attribute='stat.exists') | min
+    fail_msg: Run the TLS certificate playbook for this Praefect host first.
+  when: praefect_enable_tls | bool
+
+- name: Download the AWS RDS CA bundle for full database certificate validation
+  ansible.builtin.get_url:
+    url: "{{ praefect_rds_ca_bundle_url }}"
+    dest: "{{ praefect_rds_ca_bundle_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    force: "{{ praefect_refresh_rds_ca_bundle | bool }}"
+    validate_certs: true
+
+- name: Verify the trust bundle accepts this node's certificate and supplied chain
+  ansible.builtin.command:
+    argv:
+      - /opt/gitlab/embedded/bin/openssl
+      - verify
+      - -CAfile
+      - "{{ praefect_gitaly_ca_certificate_path }}"
+      - -untrusted
+      - "{{ praefect_tls_certificate_path }}"
+      - "{{ praefect_tls_certificate_path }}"
+  changed_when: false
+  when: praefect_enable_tls | bool
+
+- name: Install the Praefect GitLab configuration
+  ansible.builtin.template:
+    src: gitlab.rb.j2
+    dest: "{{ praefect_config_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  register: praefect_gitlab_rb
+  no_log: true
+
+- name: Apply Praefect configuration without running database migrations
+  ansible.builtin.command:
+    argv:
+      - gitlab-ctl
+      - reconfigure
+  when:
+    - praefect_reconfigure_on_change | bool
+    - praefect_gitlab_rb is changed
+  no_log: true

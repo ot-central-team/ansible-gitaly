@@ -7,7 +7,8 @@ schema migration is a separate manual action on one designated Praefect node.
 Set `praefect_refresh_rds_ca_bundle=true` for a planned CA bundle refresh.
 
 Praefect RPC listens without TLS on port 2305 by default. Set
-`praefect_enable_tls: true` to opt into TLS on port 3305; the TLS certificate
+`cluster_rpc_tls_enabled: true` in `group_vars/all` to enable both RPC services
+(Gitaly 9999 and Praefect 3305); the TLS certificate
 stage must then be completed before configuring Praefect. TLS to the database
 is separate and remains enabled with `sslmode: verify-full` by default.
 
@@ -37,8 +38,8 @@ sudo cat /opt/gitlab/etc/praefect/env/SSL_CERT_FILE
 The environment file should contain the configured public CA certificate path.
 
 The role derives Gitaly addresses from the `gitaly` inventory group. For each
-node it uses `tcp://` by default on port 8075, or `tls://` on port 9999 when that node has
-`gitaly_enable_tls: true`. In TLS mode, the inventory hostname must be in the
+node it uses `tcp://` by default on port 8075, or `tls://` on port 9999 when the shared
+`cluster_rpc_tls_enabled` switch is true. In TLS mode, the inventory hostname must be in the
 node certificate's DNS SAN. The Gitaly storage name defaults to the short
 inventory name (for example, `gitaly-1`); the Gitaly role must use the same
 storage name.
@@ -93,9 +94,12 @@ Do not run `sql-migrate` on every Praefect node. For GitLab/Praefect upgrades,
 follow the upgrade procedure for the installed GitLab version and continue to
 run migrations on only the designated deployment node.
 
-When either RPC service uses TLS, the internal CA is installed in
+When shared RPC TLS is enabled, the internal CA is installed in
 `/etc/gitlab/trusted-certs` and `/usr/local/share/ca-certificates`; the TLS role
 runs `update-ca-certificates` to include it in the system bundle. Do not move or
 overwrite the system bundle with a single CA certificate. Plaintext RPC does
 not require the internal CA. Praefect's separate RDS TLS still uses the AWS RDS
 CA bundle.
+
+See [transport instructions](../../TRANSPORT.md) for both modes. The role creates
+the parent directory for the RDS CA bundle even when RPC TLS is disabled.

@@ -1,0 +1,106 @@
+---
+- name: Require one bastion host and a vaulted CA key passphrase
+  ansible.builtin.assert:
+    that:
+      - groups['bastion'] | length == 1
+      - tls_ca_privatekey_passphrase is defined
+      - tls_ca_privatekey_passphrase | length >= 16
+    fail_msg: >-
+      Define tls_ca_privatekey_passphrase (at least 16 characters) in the
+      vaulted bastion group_vars file, and keep exactly one host in [bastion].
+  no_log: true
+
+- name: Install Python cryptography support on the bastion
+  ansible.builtin.apt:
+    name: python3-cryptography
+    state: present
+    update_cache: false
+
+- name: Create the private CA directory on the bastion
+  ansible.builtin.file:
+    path: "{{ tls_ca_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Create local staging directory for public CA certificate
+  ansible.builtin.file:
+    path: "{{ tls_local_workdir }}"
+    state: directory
+    owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
+    mode: '0700'
+    recurse: true
+  delegate_to: localhost
+  become: false
+
+- name: Inspect existing CA material before initialization
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ tls_ca_privatekey_path }}"
+    - "{{ tls_ca_csr_path }}"
+    - "{{ tls_ca_certificate_path }}"
+  register: tls_existing_ca
+
+- name: Refuse to replace a missing CA key when public material already exists
+  ansible.builtin.assert:
+    that:
+      - tls_existing_ca.results[0].stat.exists or not (tls_existing_ca.results[1].stat.exists or tls_existing_ca.results[2].stat.exists)
+    fail_msg: CA key is missing but CA material exists. Restore the original key; bootstrap will not rotate the CA.
+
+- name: Create encrypted CA private key on the bastion
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_ca_privatekey_path }}"
+    type: RSA
+    size: 4096
+    passphrase: "{{ tls_ca_privatekey_passphrase }}"
+    cipher: auto
+    regenerate: never
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  when: not tls_existing_ca.results[0].stat.exists
+
+- name: Create CA certificate signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_ca_csr_path }}"
+    privatekey_path: "{{ tls_ca_privatekey_path }}"
+    privatekey_passphrase: "{{ tls_ca_privatekey_passphrase }}"
+    common_name: "{{ tls_ca_common_name }}"
+    basic_constraints:
+      - 'CA:TRUE'
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  when: not tls_existing_ca.results[1].stat.exists and not tls_existing_ca.results[2].stat.exists
+
+- name: Create the self-signed root CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ tls_ca_certificate_path }}"
+    csr_path: "{{ tls_ca_csr_path }}"
+    privatekey_path: "{{ tls_ca_privatekey_path }}"
+    privatekey_passphrase: "{{ tls_ca_privatekey_passphrase }}"
+    provider: selfsigned
+    selfsigned_not_before: '-1d'
+    selfsigned_not_after: "+{{ tls_ca_validity_days }}d"
+    selfsigned_digest: sha256
+    owner: root
+    group: root
+    mode: '0644'
+  no_log: true
+  when: not tls_existing_ca.results[2].stat.exists
+
+- name: Fetch the public CA certificate to the controller for distribution
+  ansible.builtin.fetch:
+    src: "{{ tls_ca_certificate_path }}"
+    dest: "{{ tls_local_workdir }}/ca.crt"
+    flat: true
+    fail_on_missing: true

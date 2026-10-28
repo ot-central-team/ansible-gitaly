@@ -1,0 +1,41 @@
+---
+tls_ca_common_name: "Repo Data Internal TLS CA"
+tls_ca_directory: /etc/ansible/pki/repo-data
+tls_ca_privatekey_path: "{{ tls_ca_directory }}/ca.key"
+tls_ca_certificate_path: "{{ tls_ca_directory }}/ca.crt"
+tls_ca_csr_path: "{{ tls_ca_directory }}/ca.csr"
+tls_ca_validity_days: 3650
+tls_local_workdir: "{{ playbook_dir }}/../.ansible-tls"
+
+# Node certificate settings.
+# Matches the one-year leaf lifetime discussed. Set to 90 if you choose the
+# shorter lifetime; the renewal/timer workflow will be a separate step.
+tls_leaf_validity_days: 365
+# Compatibility guard: bootstrap rejects true; renewal is a separate workflow.
+tls_certificate_force_renew: false
+
+tls_leaf_directory: /etc/gitlab/ssl
+tls_leaf_privatekey_path: "{{ tls_leaf_directory }}/server.key"
+tls_leaf_csr_path: "{{ tls_leaf_directory }}/server.csr"
+tls_leaf_certificate_path: "{{ tls_leaf_directory }}/server.crt"
+tls_trusted_certificates_directory: /etc/gitlab/trusted-certs
+
+
+# Add service aliases here when clients connect through a load-balancer DNS
+# name. The inventory hostname is always included automatically.
+tls_extra_dns_names: []
+
+# Renewal age and expiry buffer share this interval (normal bootstrap never renews).
+tls_renew_interval_days: 30
+tls_renew_force: false
+# For a planned maintenance window only; otherwise Praefect drains through NLB.
+tls_renew_maintenance_window: false
+# Live Praefect renewal: target-group ARN, plus each node's ID in host_vars.
+# Region is derived from the ARN; TLS renewal targets the Praefect TLS port (3305).
+tls_renew_nlb_target_group_arn: ''
+tls_renew_nlb_target_id: ''
+
+# Optional controller timer. Repository and Ansible paths are derived automatically.
+# The timer targets Praefect only; keep the Vault password file outside Git.
+tls_renew_schedule_user: ubuntu
+tls_renew_schedule_vault_password_file: ''

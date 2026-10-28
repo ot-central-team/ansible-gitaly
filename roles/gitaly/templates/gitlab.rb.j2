@@ -23,7 +23,7 @@ gitaly['enable'] = true
 gitaly['env']['SSL_CERT_FILE'] = {{ gitaly_ca_certificate_path | to_json }}
 
 gitaly['configuration'] = {
-{% if gitaly_enable_tls | bool %}
+{% if cluster_rpc_tls_enabled | bool %}
   # TLS is opt-in. When enabled, disable the plaintext listener.
   listen_addr: nil,
   tls_listen_addr: {{ gitaly_tls_listen_address | to_json }},

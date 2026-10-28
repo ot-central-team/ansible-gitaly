@@ -408,6 +408,10 @@ changing Ansible alone does not update AWS. Gitaly and Praefect RPC are
 plaintext inside the private network by default. No TLS private keys belong in
 EKS. Public ALB TLS uses ACM, so no Kubernetes ingress TLS Secret is needed.
 
+For TLS on both RPC legs, follow [TRANSPORT.md](TRANSPORT.md) and apply
+`eks/gitlab-values-tls.yaml` after your local base values in every Helm command.
+The override includes both the RDS CA and internal RPC CA.
+
 Store durable copies of these secrets encrypted outside the cluster. Enable
 appropriate EKS secret encryption and restrict Secret read/RBAC access. Do not
 commit plaintext files or base64-encoded Secret manifests.
@@ -504,11 +508,17 @@ endpoint. They are different services.
 
 ## 11. Verify application and repository operations
 
-From the admin machine, test public TLS to the repository proxy:
+The default plaintext RPC mode does **not** use an OpenSSL handshake test.
+Run the Toolbox Gitaly check below in either mode.
+
+Only with shared RPC TLS enabled, its Helm override applied, and TCP NLB
+passthrough configured, verify the private-CA endpoint (copy the public CA
+from the bastion to `eks/local/repo-data-internal-ca.crt` first):
 
 ```bash
 openssl s_client -connect nlb.tyagi.fun:443 \
   -servername nlb.tyagi.fun -verify_hostname nlb.tyagi.fun \
+  -CAfile eks/local/repo-data-internal-ca.crt \
   -verify_return_error -alpn h2 -brief </dev/null
 ```
 

@@ -12,3 +12,4 @@
       ansible.builtin.import_role:
         name: tls
         tasks_from: renewal_tls.yml
+      when: cluster_rpc_tls_enabled | default(false) | bool

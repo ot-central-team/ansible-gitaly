@@ -1,5 +1,11 @@
 ---
 # Controller-only timer setup; both systemd units are defined in this file.
+- name: Require TLS mode before installing a renewal timer
+  ansible.builtin.assert:
+    that:
+      - cluster_rpc_tls_enabled | default(false) | bool
+    fail_msg: Enable shared RPC TLS before installing the timer; stop an existing timer when switching to plaintext.
+
 - name: Validate scheduler paths and identity
   ansible.builtin.assert:
     that:

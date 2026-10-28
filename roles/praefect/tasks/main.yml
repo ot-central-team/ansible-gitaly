@@ -28,14 +28,22 @@
     - "{{ praefect_tls_privatekey_path }}"
     - "{{ praefect_gitaly_ca_certificate_path }}"
   register: praefect_tls_files
-  when: praefect_enable_tls | bool
+  when: cluster_rpc_tls_enabled | bool
 
 - name: Require the Praefect TLS key, certificate, and trust bundle before configuration
   ansible.builtin.assert:
     that:
       - praefect_tls_files.results | map(attribute='stat.exists') | min
     fail_msg: Run the TLS certificate playbook for this Praefect host first.
-  when: praefect_enable_tls | bool
+  when: cluster_rpc_tls_enabled | bool
+
+- name: Ensure the database CA bundle directory exists in either RPC mode
+  ansible.builtin.file:
+    path: "{{ praefect_rds_ca_bundle_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
 
 - name: Download the AWS RDS CA bundle for full database certificate validation
   ansible.builtin.get_url:
@@ -58,7 +66,7 @@
       - "{{ praefect_tls_certificate_path }}"
       - "{{ praefect_tls_certificate_path }}"
   changed_when: false
-  when: praefect_enable_tls | bool
+  when: cluster_rpc_tls_enabled | bool
 
 - name: Install the Praefect GitLab configuration
   ansible.builtin.template:

@@ -1,5 +1,11 @@
 # Internal TLS certificates
 
+Set `cluster_rpc_tls_enabled: true` in `group_vars/all` before these workflows.
+It enables TLS for both Gitaly and Praefect. With `false`, cluster bootstrap skips
+CA creation/distribution and `renew_tls.yml` skips all node renewal tasks.
+Timer installation requires TLS mode. Stop an existing timer when disabling TLS.
+
+
 `roles/tls/tasks/ca_generation.yml` creates the encrypted root CA key and certificate on the
 bastion. Run it once with `playbooks/configure_cluster.yml --tags ca`. The task file
 `roles/tls/tasks/distribution_tls.yml` makes a private server key and CSR on each target
@@ -54,9 +60,9 @@ bastion; it does not create or renew the CA.
 The inventory hostname is placed in each certificate's Subject Alternative
 Name. For Praefect, add the DNS name clients actually use (for example, the
 Praefect load-balancer name) to `tls_extra_dns_names` in
-`inventory/lab/group_vars/praefect/vars.yml` before issuing certificates. The
-public-certificate NLB workflow instead uses separate Praefect certificate paths;
-see [NLB setup](../../NLB-SETUP.md). Do not overwrite bootstrap certificates.
+`inventory/lab/group_vars/praefect/vars.yml` before issuing certificates. Use TCP passthrough on the NLB; see [transport modes](../../TRANSPORT.md).
+The inventory uses `praefect_external_hostname` for the client-facing SAN.
+Do not overwrite bootstrap certificates.
 
 Inspect a node certificate after the playbook completes:
 

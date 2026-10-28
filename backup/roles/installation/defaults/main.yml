@@ -1,0 +1,6 @@
+---
+gitlab_ee_version: "19.4.1-ee.0"
+gitlab_package_name: gitlab-ee
+gitlab_package_repo_script_url: https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh
+gitlab_package_repo_script_path: /tmp/gitlab-ee-repository.sh
+gitlab_package_repo_file: /etc/apt/sources.list.d/gitlab_gitlab-ee.list

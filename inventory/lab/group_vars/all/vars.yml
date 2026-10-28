@@ -13,13 +13,13 @@ tls_ca_certificate_path: "{{ tls_ca_directory }}/ca.crt"
 tls_ca_csr_path: "{{ tls_ca_directory }}/ca.csr"
 tls_ca_validity_days: 3650
 
-# Gitaly RPC uses plaintext on the standard port by default. Set
-# gitaly_enable_tls: true in Gitaly group/host vars to use the TLS port instead.
-gitaly_enable_tls: false
+# One switch for BOTH Gitaly and Praefect RPC listeners and backend connections.
+# Database TLS is independent and remains enabled.
+cluster_rpc_tls_enabled: false
 gitaly_plaintext_port: 8075
 gitaly_tls_port: 9999
-
-# Praefect RPC is plaintext by default; TLS can be opted into separately.
-praefect_enable_tls: false
 praefect_plaintext_port: 2305
 praefect_tls_port: 3305
+
+# Client-facing TCP passthrough NLB DNS name; also added to Praefect SANs.
+praefect_external_hostname: nlb.tyagi.fun

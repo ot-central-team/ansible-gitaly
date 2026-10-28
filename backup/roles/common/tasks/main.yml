@@ -1,0 +1,44 @@
+---
+- name: Check firewall inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+      - ssh_sources | length > 0
+      - cluster_cidr | length > 0
+    fail_msg: Set ssh_sources and cluster_cidr before enabling UFW.
+
+- name: Refresh apt cache and install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+
+- name: Allow SSH before changing firewall policy
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    src: "{{ item }}"
+    port: "{{ common_ssh_port }}"
+  loop: "{{ ssh_sources }}"
+
+- name: Allow this node's service ports from the cluster subnet
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    src: "{{ cluster_cidr }}"
+    port: "{{ item }}"
+  loop: "{{ common_service_ports }}"
+
+- name: Deny incoming traffic by default
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Allow outgoing traffic by default
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Enable UFW and start it at boot
+  community.general.ufw:
+    state: enabled

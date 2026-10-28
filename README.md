@@ -102,14 +102,28 @@ ansible-playbook playbooks/configure_cluster.yml \
 Selected stages require their earlier prerequisites. Configuration changes may
 restart services. Normal bootstrap preserves existing certificates and private keys.
 
-Gitaly RPC is plaintext on port 8075 by default and Praefect connects using
-`tcp://`. Praefect's listener is also plaintext on port 2305 by default. In the
-EKS chart, the external Praefect `tlsEnabled` setting is false and the NLB must
-target port 2305. TLS for either service is an independent opt-in
-(`gitaly_enable_tls` for Gitaly, `praefect_enable_tls` for Praefect), using
-ports 9999 and 3305 respectively. Changing a live cluster's transport requires
-coordinating each client, server, load balancer and firewall in a maintenance
-window. PostgreSQL TLS is separate and remains enabled by default.
+Set **one** boolean in `inventory/lab/group_vars/all/vars.yml`:
+
+```yaml
+cluster_rpc_tls_enabled: false # true enables TLS for BOTH Gitaly and Praefect
+```
+
+Do not set per-host transport overrides. Remove the former `gitaly_enable_tls`
+and `praefect_enable_tls` variables; preflight rejects them before modifying hosts.
+The same roles run in either mode. Database TLS stays enabled independently.
+
+| Mode | Praefect listener | Gitaly listener | Backend addresses |
+|---|---|---|---|
+| `false` | TCP 2305 | TCP 8075 | `tcp://` |
+| `true` | TLS 3305 | TLS 9999 | `tls://` |
+
+TLS mode creates/distributes certificates and CA trust to all storage/routing
+nodes. Plaintext mode skips issuance and renewal, but still creates the RDS CA
+bundle directory and downloads the database CA. Existing TLS files are retained.
+
+See [RPC transport modes](TRANSPORT.md) for the EKS override, NLB mapping,
+certificate SANs, verification, and maintenance-window mode changes. Ansible
+configures the VMs; it does not change your NLB, security groups or Helm release.
 
 ## 3. Migrate and verify
 
@@ -160,3 +174,10 @@ See [TLS renewal](roles/tls/RENEWAL.md) for draining, timer setup and limitation
 Role details: [Gitaly](roles/gitaly/README.md) ·
 [Praefect](roles/praefect/README.md) · [Database](roles/db/README.md) ·
 [TLS](roles/tls/README.md) · [Installation](roles/installation/README.md).
+
+## Local validation
+
+Install `ansible-core` and `PyYAML`, then run `python -m unittest discover -s tests -v`.
+The tests run local Ansible preflight and render both real service templates in both
+modes, and reject mixed modes, string booleans and obsolete switches. They do not
+connect to AWS or prove live certificate issuance, migration or failover.

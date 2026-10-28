@@ -10,7 +10,7 @@ This role contains two independently selectable task files:
 Both use `defaults/main.yml`. The configuration template is in
 `templates/gitlab.rb.j2`. The repository filesystem and GitLab package must be
 ready before running the configuration tasks. Node TLS certificates are only
-required when `gitaly_enable_tls: true`.
+required when `cluster_rpc_tls_enabled: true`.
 
 Select the desired task file in your playbook:
 
@@ -29,7 +29,7 @@ The cluster playbook selects these files through its `storage` and `gitaly` stag
 Each Gitaly host needs an explicit `gitaly_storage_name` in `host_vars`. That
 name must match the corresponding `storage` entry rendered by the Praefect
 role. Praefect selects `tcp://` or `tls://` per Gitaly host from
-`gitaly_enable_tls`.
+`cluster_rpc_tls_enabled`.
 
 Required inventory values:
 
@@ -53,13 +53,11 @@ this bundle is also used to verify the node certificate. The TLS certificate
 role installs the internal CA into Ubuntu's system trust store. This outbound
 HTTPS trust setting does not turn on TLS for the Gitaly RPC listener.
 
-For encrypted Gitaly RPC, set `gitaly_enable_tls: true` for the relevant Gitaly
-hosts and run the `certificates` stage before configuration. By default,
-Gitaly RPC is plaintext on port 8075 and Praefect uses `tcp://` for those endpoints.
-Praefect's own listener is also plaintext on port 2305 by default; it can
-independently opt into TLS on 3305. Changing transport on an existing
-cluster requires coordinating Gitaly and Praefect reconfiguration; schedule a
-maintenance window because the two sides must agree on the transport.
+Set `cluster_rpc_tls_enabled: true` once in `group_vars/all` to enable TLS
+for both Gitaly (9999) and Praefect (3305). With `false`, both use plaintext
+(8075 and 2305). Run the complete cluster playbook for a fresh deployment.
+Do not override transport per host. See [transport instructions](../../TRANSPORT.md)
+for coordinated mode changes, certificate prerequisites and EKS/NLB settings.
 The configuration playbook processes one node at a time. Reconfiguration may
 restart Gitaly; serial execution alone does not guarantee uninterrupted traffic.
 After deployment, check `/opt/gitlab/etc/gitaly/env/SSL_CERT_FILE` on each node
@@ -79,7 +77,7 @@ real reachable URL and shared GitLab Shell secret, then rerun the role. The
 secret must also be configured on the GitLab application server.
 
 Run after the data disks and GitLab package are ready (and certificates too if
-`gitaly_enable_tls` is enabled). When changing the transport mode, run both the
+`cluster_rpc_tls_enabled` is enabled). When changing the transport mode, run both the
 `gitaly` and `praefect` tags so both ends are updated:
 
 ```bash
@@ -129,7 +127,7 @@ Disk discovery is read-only, including in check mode. On fresh VMs check mode
 cannot install missing `nvme-cli` or create a filesystem/UUID, so a complete
 fresh-disk dry run is not supported.
 
-When either RPC service uses TLS, the internal CA is installed in
+When shared RPC TLS is enabled, the internal CA is installed in
 `/etc/gitlab/trusted-certs` and `/usr/local/share/ca-certificates`; the TLS role
 runs `update-ca-certificates` to include it in the system bundle. Do not move or
 overwrite the system bundle with a single CA certificate. The plaintext

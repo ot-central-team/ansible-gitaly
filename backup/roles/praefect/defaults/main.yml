@@ -1,0 +1,28 @@
+---
+praefect_config_path: /etc/gitlab/gitlab.rb
+# Praefect RPC is plaintext by default. TLS can be enabled explicitly.
+praefect_enable_tls: false
+praefect_plaintext_port: 2305
+praefect_tls_port: 3305
+praefect_listen_address: "0.0.0.0:{{ praefect_plaintext_port }}"
+praefect_tls_listen_address: "0.0.0.0:{{ praefect_tls_port }}"
+praefect_tls_certificate_path: /etc/gitlab/ssl/server.crt
+# System bundle includes public CAs and our internal CA installed by the TLS role.
+praefect_gitaly_ca_certificate_path: /etc/ssl/certs/ca-certificates.crt
+praefect_tls_privatekey_path: /etc/gitlab/ssl/server.key
+praefect_rds_ca_bundle_url: https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+praefect_rds_ca_bundle_path: /etc/gitlab/ssl/rds-global-bundle.pem
+praefect_refresh_rds_ca_bundle: false
+praefect_database_sslmode: verify-full
+praefect_database_port: 5432
+praefect_database_name: praefect_production
+praefect_database_user: praefect
+praefect_virtual_storage_name: default
+# Copies of each repository across Gitaly nodes; this is unrelated to the
+# number of Praefect VMs. Keep 3 as the production default when using 3 Gitaly nodes.
+praefect_default_replication_factor: 3
+praefect_reconfigure_on_change: true
+
+# Define these in vaulted inventory variables. They must be long random values.
+praefect_external_token: ''
+praefect_internal_token: ''

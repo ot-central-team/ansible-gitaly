@@ -1,0 +1,17 @@
+# Secrets and generated TLS material
+.vault_pass
+vault-password*
+*.key
+*.pem
+*.p12
+*.pfx
+ca/
+certs/
+.ansible-tls/
+
+# Ansible/runtime artifacts
+*.retry
+__pycache__/
+
+# Local EKS settings, credentials, downloaded charts, and rendered Secrets
+/eks/local/

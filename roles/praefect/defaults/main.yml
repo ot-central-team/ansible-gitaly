@@ -1,7 +1,7 @@
 ---
 praefect_config_path: /etc/gitlab/gitlab.rb
-# Praefect RPC is plaintext by default. TLS can be enabled explicitly.
-praefect_enable_tls: false
+# Shared switch for BOTH RPC services; set once in group_vars/all.
+cluster_rpc_tls_enabled: false
 praefect_plaintext_port: 2305
 praefect_tls_port: 3305
 praefect_listen_address: "0.0.0.0:{{ praefect_plaintext_port }}"

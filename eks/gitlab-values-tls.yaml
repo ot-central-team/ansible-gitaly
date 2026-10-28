@@ -1,0 +1,14 @@
+# Apply AFTER your customized base values only when cluster_rpc_tls_enabled: true.
+# Lists replace the base lists. Keep the RDS CA as well as the internal RPC CA.
+# Match hostname to praefect_external_hostname and the certificate SAN.
+global:
+  gitaly:
+    external:
+      - name: default
+        hostname: nlb.tyagi.fun
+        port: 443
+        tlsEnabled: true
+  certificates:
+    customCAs:
+      - secret: aws-rds-ca
+      - secret: repo-data-internal-ca

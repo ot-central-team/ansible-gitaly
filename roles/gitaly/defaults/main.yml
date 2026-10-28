@@ -7,9 +7,8 @@ gitaly_data_mountpoint: /var/opt/gitlab/git-data
 
 # Gitaly service configuration defaults.
 gitaly_config_path: /etc/gitlab/gitlab.rb
-# Gitaly RPC is plaintext by default. Enable this together with certificates
-# when encrypted Praefect-to-Gitaly traffic is required.
-gitaly_enable_tls: false
+# Shared switch for BOTH RPC services; set once in group_vars/all.
+cluster_rpc_tls_enabled: false
 gitaly_plaintext_port: 8075
 gitaly_tls_port: 9999
 gitaly_listen_address: "0.0.0.0:{{ gitaly_plaintext_port }}"

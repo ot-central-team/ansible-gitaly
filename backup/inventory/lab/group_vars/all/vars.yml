@@ -1,0 +1,25 @@
+ansible_user: ubuntu
+ansible_become: true
+gitlab_ee_version: "19.4.1-ee.0"
+cluster_cidr: 0.0.0.0/0
+ssh_sources:
+  - "{{ cluster_cidr }}"
+
+# Shared CA configuration. The CA key stays on the bastion.
+tls_ca_common_name: "Repo Data Internal TLS CA"
+tls_ca_directory: /etc/ansible/pki/repo-data
+tls_ca_privatekey_path: "{{ tls_ca_directory }}/ca.key"
+tls_ca_certificate_path: "{{ tls_ca_directory }}/ca.crt"
+tls_ca_csr_path: "{{ tls_ca_directory }}/ca.csr"
+tls_ca_validity_days: 3650
+
+# Gitaly RPC uses plaintext on the standard port by default. Set
+# gitaly_enable_tls: true in Gitaly group/host vars to use the TLS port instead.
+gitaly_enable_tls: false
+gitaly_plaintext_port: 8075
+gitaly_tls_port: 9999
+
+# Praefect RPC is plaintext by default; TLS can be opted into separately.
+praefect_enable_tls: false
+praefect_plaintext_port: 2305
+praefect_tls_port: 3305
