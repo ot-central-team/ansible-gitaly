@@ -7,5 +7,5 @@ common_service_ports:
 
 # The Rails application is not set up yet. Enable this and provide the API URL
 # and GitLab Shell secret after the application is deployed.
-gitaly_configure_gitlab_callbacks: false
-gitaly_internal_api_url: ''
+gitaly_configure_gitlab_callbacks: true
+gitaly_internal_api_url: 'https://gitlab.tyagi.fun/api/v4/internal'
