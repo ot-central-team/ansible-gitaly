@@ -20,7 +20,7 @@ gitaly_ca_certificate_path: /etc/ssl/certs/ca-certificates.crt
 gitaly_repository_mountpoint: /var/opt/gitlab/git-data
 gitaly_repository_path: /var/opt/gitlab/git-data/repositories
 gitaly_configure_gitlab_callbacks: true
-gitaly_internal_api_url: ''
+gitaly_internal_api_url: 'https://gitlab.tyagi.fun/api/v4/internal'
 gitaly_reconfigure_on_change: true
 
 # Override these with vaulted/shared inventory values.
